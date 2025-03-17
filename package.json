@@ -1,0 +1,21 @@
+{
+  "name": "stream-service",
+  "version": "0.1.0",
+  "description": "AI-powered video pipeline with OpenAI, Zonos TTS, and LatentSync",
+  "main": "server/app.js",
+  "scripts": {
+    "start": "node server/app.js",
+    "dev": "nodemon server/app.js",
+    "setup": "bash scripts/setup.sh"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "form-data": "^4.0.0",
+    "node-fetch": "^3.3.2",
+    "openai": "^4.87.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
+}
