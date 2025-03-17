@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "AI-powered video pipeline with OpenAI, Zonos TTS, and LatentSync",
   "main": "server/app.js",
+  "type": "module",
   "scripts": {
     "start": "node server/app.js",
     "dev": "nodemon server/app.js",

@@ -1,6 +1,11 @@
 // Simple logging utility
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Get __dirname equivalent in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Ensure logs directory exists
 const logsDir = path.join(__dirname, '../../logs');
@@ -9,12 +14,6 @@ if (!fs.existsSync(logsDir)) {
 }
 
 const logFile = path.join(logsDir, 'app.log');
-
-const logger = {
-  info: (message) => log('INFO', message),
-  warn: (message) => log('WARN', message),
-  error: (message) => log('ERROR', message),
-};
 
 function log(level, message) {
   const timestamp = new Date().toISOString();
@@ -27,4 +26,8 @@ function log(level, message) {
   fs.appendFileSync(logFile, logMessage);
 }
 
-module.exports = { logger };
+export const logger = {
+  info: (message) => log('INFO', message),
+  warn: (message) => log('WARN', message),
+  error: (message) => log('ERROR', message),
+};

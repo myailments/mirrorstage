@@ -1,13 +1,17 @@
 // app.js - Main application for Lambda Cloud AI Video Pipeline
-require('dotenv').config();
-const express = require('express');
-const fs = require('fs');
-const path = require('path');
-const { OpenAI } = require('openai');
-const fetch = require('node-fetch');
-const FormData = require('form-data');
-const config = require('./config');
-const { logger } = require('./utils/logger');
+import 'dotenv/config';
+import express from 'express';
+import fs from 'fs';
+import path from 'path';
+import { OpenAI } from 'openai';
+import fetch from 'node-fetch';
+import FormData from 'form-data';
+import { fileURLToPath } from 'url';
+import config from './config.js';
+import { logger } from './utils/logger.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Initialize Express app
 const app = express();
@@ -58,13 +62,21 @@ class AIPipeline {
     if (!fs.existsSync(this.outputDir)) {
       fs.mkdirSync(this.outputDir, { recursive: true });
     }
+
+
+    // Verify if assets directory exists
+    const assetsDir = path.join(__dirname, '../assets');
+    if (!fs.existsSync(assetsDir)) {
+      fs.mkdirSync(assetsDir, { recursive: true });
+    }
+    
     
     // Verify base video exists
     if (!fs.existsSync(this.baseVideo)) {
       this.log(`Base video not found at ${this.baseVideo}`, 'error');
       throw new Error(`Base video not found at ${this.baseVideo}`);
     }
-    
+
     // Check connections to local services
     try {
       // Test Zonos TTS connection
@@ -382,13 +394,13 @@ Be natural, engaging, and concise.`
       }
       
       // Get audio data as buffer
-      const audioBuffer = await response.buffer();
+      const audioBuffer = await response.arrayBuffer();
       
       // Save to file
       const audioFileName = `speech_${Date.now()}.wav`;
       const audioPath = path.join(this.outputDir, audioFileName);
       
-      fs.writeFileSync(audioPath, audioBuffer);
+      fs.writeFileSync(audioPath, Buffer.from(audioBuffer));
       this.log(`Saved audio to ${audioPath}`);
       
       return audioPath;
@@ -426,13 +438,13 @@ Be natural, engaging, and concise.`
       }
       
       // Get video data as buffer
-      const videoBuffer = await response.buffer();
+      const videoBuffer = await response.arrayBuffer();
       
       // Save to file
       const videoFileName = `video_${Date.now()}.mp4`;
       const videoPath = path.join(this.outputDir, videoFileName);
       
-      fs.writeFileSync(videoPath, videoBuffer);
+      fs.writeFileSync(videoPath, Buffer.from(videoBuffer));
       this.log(`Saved synchronized video to ${videoPath}`);
       
       return videoPath;
@@ -517,7 +529,7 @@ let initialized = false;
     await pipeline.initialize();
     initialized = true;
   } catch (error) {
-    logger.error('Failed to initialize pipeline:', error);
+    logger.error(`Failed to initialize pipeline: ${error}`);
     process.exit(1);
   }
 })();
@@ -596,7 +608,7 @@ app.get('/video/:filename', (req, res) => {
     return res.status(404).json({ error: 'Video not found' });
   }
   
-  res.sendFile(videoPath);
+  res.sendFile(path.resolve(videoPath));
 });
 
 app.get('/base-video', (req, res) => {
@@ -608,7 +620,7 @@ app.get('/base-video', (req, res) => {
     return res.status(404).json({ error: 'Base video not found' });
   }
   
-  res.sendFile(pipeline.baseVideo);
+  res.sendFile(path.resolve(pipeline.baseVideo));
 });
 
 // Simple health check endpoint
@@ -630,4 +642,4 @@ app.listen(PORT, () => {
   logger.info(`Server running on port ${PORT}`);
 });
 
-module.exports = { app, pipeline };
+export { app, pipeline };

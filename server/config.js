@@ -1,5 +1,5 @@
 // Configuration handler
-require('dotenv').config();
+import 'dotenv/config';
 
 const config = {
   // Server configuration
@@ -22,4 +22,4 @@ const config = {
   maxQueueSize: parseInt(process.env.MAX_QUEUE_SIZE || '10', 10),
 };
 
-module.exports = config;
+export default config;
