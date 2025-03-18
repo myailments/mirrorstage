@@ -20,6 +20,7 @@ export class PipelineInitializer {
       await fileManager.initializeDirectories();
       fileManager.verifyBaseVideo();
 
+
       // Initialize services
       const services = {
         fileManager,
@@ -32,6 +33,7 @@ export class PipelineInitializer {
           new FalLatentSync(this.config) : 
           new LocalLatentSync(this.config)
       };
+      
 
       // Test service connections
       await this.testServices(services);

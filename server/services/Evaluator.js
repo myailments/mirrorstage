@@ -1,3 +1,7 @@
+import { z } from 'zod';
+import { zodResponseFormat } from 'openai/helpers/zod';
+import { logger } from '../utils/logger.js';
+
 export class MessageEvaluator {
   constructor() {
     this.schema = z.object({

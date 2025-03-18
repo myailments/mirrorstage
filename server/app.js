@@ -25,8 +25,12 @@ class AIPipeline {
       maxConcurrent: Math.min(options.maxConcurrentProcessing || 4, 20),
       minPriority: 2,
       checkInterval: 1000,
-      useElevenLabs: options.useElevenLabs,
-      useFalLatentSync: options.useFalLatentSync
+      zonosTtsPort: config.zonosTtsPort,
+      zonosTtsEndpoint: config.zonosTtsEndpoint,
+      latentSyncPort: config.latentSyncPort,
+      latentSyncEndpoint: config.latentsyncEndpoint,
+      useElevenLabs: options.useElevenLabs || config.useElevenLabs,
+      useFalLatentSync: options.useFalLatentSync || config.useFalLatentSync
     };
 
     // Single queue with status tracking

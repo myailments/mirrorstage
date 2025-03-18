@@ -1,3 +1,7 @@
+import fs from 'fs';
+import path from 'path';
+import { logger } from '../utils/logger.js';
+
 // Base TTS class
 class TTS {
   async convert(text) {
@@ -6,11 +10,29 @@ class TTS {
 }
 
 export class ZonosTTS extends TTS {
-  constructor(options) {
+  constructor(config) {
     super();
-    this.baseUrl = options.baseUrl || config.baseUrl;
-    this.port = options.zonosTtsPort || config.zonosTtsPort;
-    this.endpoint = options.zonosTTSEndpoint || config.zonosTtsEndpoint;
+    this.baseUrl = config.baseUrl;
+    this.port = config.zonosTtsPort;
+    this.endpoint = config.zonosTtsEndpoint;
+  }
+
+  async testConnection() {
+    try {
+      const response = await fetch(`${this.baseUrl}:${this.port}/health`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Zonos TTS service unavailable: ${response.status}`);
+      }
+      
+      return true;
+    } catch (error) {
+      logger.error(`Zonos TTS connection test failed: ${error.message}`);
+      return false;
+    }
   }
 
   async convert(text) {
@@ -38,10 +60,31 @@ export class ZonosTTS extends TTS {
 }
 
 export class ElevenLabsTTS extends TTS {
-  constructor(options) {
+  constructor(config) {
     super();
-    this.apiKey = options.elevenLabsApiKey || process.env.ELEVENLABS_API_KEY;
-    this.voiceId = options.elevenLabsVoiceId || '21m00Tcm4TlvDq8ikWAM';
+    this.apiKey = config.elevenLabsApiKey || process.env.ELEVENLABS_API_KEY;
+    this.voiceId = config.elevenLabsVoiceId || '21m00Tcm4TlvDq8ikWAM';
+  }
+
+  async testConnection() {
+    try {
+      const response = await fetch('https://api.elevenlabs.io/v1/voices', {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'xi-api-key': this.apiKey
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`ElevenLabs service unavailable: ${response.status}`);
+      }
+      
+      return true;
+    } catch (error) {
+      logger.error(`ElevenLabs connection test failed: ${error.message}`);
+      return false;
+    }
   }
 
   async convert(text) {
