@@ -157,8 +157,11 @@ logs/
 # OS specific files
 .DS_Store
 Thumbs.db
-EOF
 
-
-# Ignore models folder
+# First, ignore everything in models
 models/
+
+# Don't ignore the reference files
+!reference/
+!reference/zonos-tts/server.py
+!reference/latentsync/server.py

@@ -33,6 +33,7 @@ class AIPipeline {
     this.baseVideo = options.baseVideo || config.baseVideoPath;
     this.outputDir = options.outputDir || config.outputDir;
     this.zonosTTSEndpoint = options.zonosTTSEndpoint || config.zonosTtsEndpoint;
+    this.zonosTtsPort = options.zonosTtsPort || config.zonosTtsPort;
     this.latentSyncEndpoint = options.latentSyncEndpoint || config.latentsyncEndpoint;
     this.latentSyncPort = options.latentSyncPort || config.latentSyncPort;
     this.minQueueSize = Math.max(1, options.minQueueSize || config.minQueueSize || 2);
@@ -84,6 +85,14 @@ class AIPipeline {
         credentials: this.falApiKey
       });
     }
+
+    // Add more frequent video queue checks
+    this.videoQueueCheckInterval = options.videoQueueCheckInterval || 1000; // Check every second
+    this.startVideoQueueMonitor();
+
+    // Add currently playing video tracking
+    this.currentlyPlayingVideo = null;
+    this.playStartTime = null;
   }
 
   /**
@@ -489,55 +498,56 @@ ${JSON.stringify(inputs, null, 2)}`
   // Separate the processItem function for better async handling
   async processItem(nextItem) {
     try {
-        // First generate the text
-        const generatedText = await this.generateText(nextItem.message, nextItem.userId);
-        
-        // Then convert to speech
-        const audioPath = await this.textToSpeech(generatedText);
+      const generatedText = await this.generateText(nextItem.message, nextItem.userId);
+      const audioPath = await this.textToSpeech(generatedText);
+      
+      // Start video sync
+      const videoPromise = this.synchronizeVideo(audioPath);
+      
+      // Update processing status with promise
+      const processingInfo = this.processingItems.get(nextItem.messageId);
+      if (processingInfo) {
+        processingInfo.videoPromise = videoPromise;
+        processingInfo.audioPath = audioPath;
+        processingInfo.generatedText = generatedText;
+        processingInfo.item = nextItem;
+      }
 
-        // Start video sync but don't await it immediately
-        const videoPromise = this.synchronizeVideo(audioPath);
-        
-        // Update processing status
-        const processingInfo = this.processingItems.get(nextItem.messageId);
-        if (processingInfo) {
-            processingInfo.videoPromise = videoPromise;
-            processingInfo.audioPath = audioPath;
-            processingInfo.generatedText = generatedText;
-        }
-
-        // Now await the video processing
-        const videoPath = await videoPromise;
-
+      // Wait for video and add to queue immediately when done
+      const videoPath = await videoPromise;
+      
+      // Double check it's not already in queue
+      if (!this.videoQueue.some(v => v.path === videoPath)) {
         this.videoQueue.push({
-            path: videoPath,
-            userId: nextItem.userId,
-            messageId: nextItem.messageId,
-            originalMessage: nextItem.message,
-            generatedText: generatedText,
-            timestamp: Date.now(),
-            processingTime: Date.now() - this.processingItems.get(nextItem.messageId).startTime
+          path: videoPath,
+          userId: nextItem.userId,
+          messageId: nextItem.messageId,
+          originalMessage: nextItem.message,
+          generatedText: generatedText,
+          timestamp: Date.now(),
+          processingTime: Date.now() - processingInfo.startTime
         });
+      }
 
-        // Cleanup
-        try {
-            fs.unlinkSync(audioPath);
-        } catch (error) {
-            this.log(`Warning: Could not delete temporary audio file: ${error.message}`, 'warn');
-        }
+      // Cleanup audio file
+      try {
+        fs.unlinkSync(audioPath);
+      } catch (error) {
+        this.log(`Warning: Could not delete temporary audio file: ${error.message}`, 'warn');
+      }
 
-        this.log(`Completed processing for user ${nextItem.userId}`);
+      this.log(`Completed processing for user ${nextItem.userId}`);
     } catch (error) {
-        this.log(`Error processing item: ${error.message}`, 'error');
-        if (nextItem.retryCount < 3) {
-            this.generationQueue.unshift({
-                ...nextItem,
-                retryCount: nextItem.retryCount + 1
-            });
-        }
+      this.log(`Error processing item: ${error.message}`, 'error');
+      if (nextItem.retryCount < 3) {
+        this.generationQueue.unshift({
+          ...nextItem,
+          retryCount: (nextItem.retryCount || 0) + 1
+        });
+      }
     } finally {
-        this.processingItems.delete(nextItem.messageId);
-        this.activeProcessingCount = Math.max(0, this.activeProcessingCount - 1);
+      this.processingItems.delete(nextItem.messageId);
+      this.activeProcessingCount = Math.max(0, this.activeProcessingCount - 1);
     }
   }
 
@@ -547,41 +557,60 @@ ${JSON.stringify(inputs, null, 2)}`
   async generateText(message, userId) {
     this.log(`Generating text response for: "${message}"`);
 
+    const prefixedMessage = `You are streaming a livestream. Please respond without using abbreviations or emojis. Your response will be converted to speech and synchronized with video. Therefore, do not use "lol" or "lmao" or any other internet slang. Respond naturally, like you are talking to a friend.
+    Your response should be between 15-30 seconds when spoken (approximately 30-60 words).  
+    You are responding to the following message:
+    ${message}`
+
     try {
-      // Get recent conversation history for context
-      const recentHistory = this.userInputs
-        .filter(input => input.userId === userId)
-        .slice(-5); // Last 5 messages from this user
+      // Call chat endpoint
+      const response = await fetch(`${process.env.CLOUDY_AI_API_URL}/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: prefixedMessage,
+          userId: userId,
+          roomId: `pipeline_${userId}_`, // Create a unique room ID for pipeline messages
+        })
+      });
 
-      const contextMessages = recentHistory.map(input => ({
-        role: "user",
-        content: input.message
-      }));
+      if (!response.ok) {
+        throw new Error(`Chat API error: ${response.statusText}`);
+      }
 
-      // Call OpenAI API
-      const response = await openai.chat.completions.create({
-        model: "gpt-4-turbo-preview",  // Use the appropriate model for your needs
-        messages: [
-          {
-            role: "system",
-            content: `You are a helpful and concise AI assistant for a video generation system. 
+      const data = await response.json();
+      return data.message;
+
+    } catch (error) {
+      this.log(`Text generation error: ${error.message}`, 'error');
+      // Fallback to OpenAI if chat endpoint fails
+      try {
+        const response = await openai.chat.completions.create({
+          model: "gpt-4-turbo-preview",
+          messages: [
+            {
+              role: "system",
+              content: `You are a helpful and concise AI assistant for a video generation system. 
 Your responses will be converted to speech and synchronized with video.
 Keep your responses between 15-30 seconds when spoken (approximately 30-60 words).
 Be natural, engaging, and concise.`
-          },
-          ...contextMessages,
-          {
-            role: "user",
-            content: message
-          }
-        ],
-        max_tokens: 150  // Limit token length to keep responses brief
-      });
+            },
+            ...contextMessages,
+            {
+              role: "user",
+              content: message
+            }
+          ],
+          max_tokens: 150
+        });
 
-      return response.choices[0].message.content.trim();
-    } catch (error) {
-      this.log(`Text generation error: ${error.message}`, 'error');
-      return 'I apologize, but I encountered an issue processing your request. How can I help you today?';
+        return response.choices[0].message.content.trim();
+      } catch (fallbackError) {
+        this.log(`Fallback text generation error: ${fallbackError.message}`, 'error');
+        return 'I apologize, but I encountered an issue processing your request. How can I help you today?';
+      }
     }
   }
 
@@ -614,9 +643,9 @@ Be natural, engaging, and concise.`
           text,
           model_id: 'eleven_monolingual_v1',
           voice_settings: {
-            stability: 0.5,
-            similarity_boost: 0.75,
-            style: 0.5,
+            stability: 0.85,
+            similarity_boost: 0.95,
+            style: 0.35,
             use_speaker_boost: true
           }
         })
@@ -670,64 +699,27 @@ Be natural, engaging, and concise.`
     this.log(`Converting to speech: "${text}"`);
 
     try {
-      // Call Zonos TTS API
       const ttsEndpoint = `${this.baseUrl}:${this.zonosTtsPort}${this.zonosTTSEndpoint}`;
-      this.log(`Calling TTS API at: ${ttsEndpoint}`);
       
       const response = await fetch(ttsEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text,
-          voice: "en_female_1",
-          speed: 1.0
-        })
+        body: JSON.stringify({ text })
       });
 
-      this.log(`Response status: ${response.status}`);
-      this.log(`Response headers: ${JSON.stringify(response.headers.raw())}`);
-      const contentLength = response.headers.get('content-length');
-      this.log(`Audio data size: ${contentLength} bytes`);
-
       if (!response.ok) {
-        const errorText = await response.text();
-        this.log(`TTS Error response: ${errorText}`);
-        throw new Error(`TTS API error: ${response.statusText}`);
+        throw new Error(`TTS API error: ${response.status} - ${response.statusText}`);
       }
 
-      try {
-        // Get audio data as buffer
-        this.log('Attempting to get response buffer...');
-        const audioBuffer = await response.arrayBuffer();
-        this.log(`Received array buffer of size: ${audioBuffer.byteLength} bytes`);
-        
-        // Convert ArrayBuffer to Buffer
-        this.log('Converting ArrayBuffer to Node Buffer...');
-        const nodeBuffer = Buffer.from(audioBuffer);
-        this.log(`Converted to Node Buffer of size: ${nodeBuffer.length} bytes`);
-
-        // Save to file
-        const audioFileName = `speech_${Date.now()}.wav`;
-        const audioPath = path.join(this.outputDir, audioFileName);
-
-        this.log(`Writing buffer to file: ${audioPath}`);
-        fs.writeFileSync(audioPath, nodeBuffer);
-        
-        // Verify the saved file
-        const stats = fs.statSync(audioPath);
-        this.log(`Saved audio file size: ${stats.size} bytes`);
-
-        if (stats.size === 0) {
-          throw new Error('Saved audio file is empty');
-        }
-
-        return audioPath;
-      } catch (bufferError) {
-        this.log(`Error processing audio buffer: ${bufferError.stack}`, 'error');
-        throw bufferError;
-      }
+      const audioBuffer = await response.arrayBuffer();
+      const audioFileName = `speech_${Date.now()}.wav`;
+      const audioPath = path.join(this.outputDir, audioFileName);
+      
+      fs.writeFileSync(audioPath, Buffer.from(audioBuffer));
+      
+      return audioPath;
     } catch (error) {
-      this.log(`Speech generation error: ${error.stack}`, 'error');
+      this.log(`Speech generation error: ${error.message}`, 'error');
       throw error;
     }
   }
@@ -772,14 +764,7 @@ Be natural, engaging, and concise.`
           guidance_scale: 1,
           loop_mode: "loop"
         },
-        logs: true,
-        onQueueUpdate: (update) => {
-          if (update.status === "IN_PROGRESS") {
-            update.logs.map((log) => log.message).forEach(msg => 
-              this.log(`FAL.ai progress: ${msg}`)
-            );
-          }
-        },
+        logs: false
       });
 
       // Allow other processing to continue while this runs
@@ -907,7 +892,14 @@ Be natural, engaging, and concise.`
         elapsedTime: Date.now() - info.startTime,
         status: info.status,
         hasPendingVideo: !!info.videoPromise
-      }))
+      })),
+      currentlyPlaying: this.currentlyPlayingVideo ? {
+        path: path.basename(this.currentlyPlayingVideo.path),
+        userId: this.currentlyPlayingVideo.userId,
+        originalMessage: this.currentlyPlayingVideo.originalMessage,
+        generatedText: this.currentlyPlayingVideo.generatedText,
+        timestamp: this.currentlyPlayingVideo.timestamp
+      } : null
     };
   }
 
@@ -938,14 +930,38 @@ Be natural, engaging, and concise.`
   }
 
   /**
-   * Mark a video as streamed (remove from queue)
+   * Mark a video as streamed (remove from queue) and cleanup files
    */
-  markVideoAsStreamed(videoPath) {
+  async markVideoAsStreamed(videoPath) {
     const index = this.videoQueue.findIndex(item => item.path === videoPath);
     if (index !== -1) {
       const video = this.videoQueue.splice(index, 1)[0];
       this.lastStreamTime = Date.now();
-      this.log(`Marked video as streamed: ${path.basename(videoPath)}`);
+      
+      // Cleanup the video file
+      try {
+        if (fs.existsSync(videoPath)) {
+          fs.unlinkSync(videoPath);
+          this.log(`Deleted streamed video file: ${path.basename(videoPath)}`);
+        }
+        
+        // Cleanup any old files in the output directory
+        const files = fs.readdirSync(this.outputDir);
+        const oneHourAgo = Date.now() - (60 * 60 * 1000); // 1 hour
+        
+        for (const file of files) {
+          const filePath = path.join(this.outputDir, file);
+          const stats = fs.statSync(filePath);
+          
+          if (stats.mtimeMs < oneHourAgo) {
+            fs.unlinkSync(filePath);
+            this.log(`Deleted old file: ${file}`);
+          }
+        }
+      } catch (error) {
+        this.log(`Warning: Error during file cleanup: ${error.message}`, 'warn');
+      }
+      
       return video;
     }
     return null;
@@ -963,6 +979,44 @@ Be natural, engaging, and concise.`
     // Remove old user inputs
     const oneHourAgo = Date.now() - (60 * 60 * 1000);
     this.userInputs = this.userInputs.filter(input => input.timestamp > oneHourAgo);
+  }
+
+  /**
+   * Start monitoring the video queue
+   */
+  startVideoQueueMonitor() {
+    setInterval(() => {
+      try {
+        // Check for completed videos that haven't been added to queue
+        const processingItems = Array.from(this.processingItems.values());
+        for (const info of processingItems) {
+          if (info.videoPromise && info.status === 'processing') {
+            // Check if promise is fulfilled
+            Promise.race([
+              info.videoPromise,
+              new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Timeout')), 500)
+              )
+            ]).then(videoPath => {
+              if (videoPath && !this.videoQueue.some(v => v.path === videoPath)) {
+                this.log(`Found completed video that wasn't in queue: ${videoPath}`);
+                this.videoQueue.push({
+                  path: videoPath,
+                  userId: info.item.userId,
+                  messageId: info.item.messageId,
+                  originalMessage: info.item.message,
+                  generatedText: info.generatedText,
+                  timestamp: Date.now(),
+                  processingTime: Date.now() - info.startTime
+                });
+              }
+            }).catch(() => {}); // Ignore timeouts/errors
+          }
+        }
+      } catch (error) {
+        this.log(`Error in video queue monitor: ${error.message}`, 'warn');
+      }
+    }, this.videoQueueCheckInterval);
   }
 }
 
@@ -1088,6 +1142,7 @@ app.get('/health', (req, res) => {
 
 // Start the server
 const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => {
   logger.info(`Server running on port ${PORT}`);
 });

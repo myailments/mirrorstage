@@ -21,7 +21,7 @@ const config = {
   // Queue configuration
   minQueueSize: parseInt(process.env.MIN_QUEUE_SIZE || '3', 10),
   maxQueueSize: parseInt(process.env.MAX_QUEUE_SIZE || '10', 10),
-  useElevenLabs: true,
+  useElevenLabs: false,
   elevenLabsVoiceId: '4ktOZjIcYueSlqN5UZjv',
   elevenLabsApiKey: process.env.ELEVENLABS_API_KEY,
   useFalLatentSync: true,
