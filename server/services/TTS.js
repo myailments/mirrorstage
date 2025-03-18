@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { logger } from '../utils/logger.js';
+import { ZyphraClient } from '@zyphra/client';
 
 // Base TTS class
 class TTS {
@@ -123,3 +124,34 @@ export class ElevenLabsTTS extends TTS {
     }
   }
 } 
+
+export class ZonosTTSAPI extends TTS {
+  constructor(config) {
+    super();
+    this.apiKey = config.zonosApiKey;
+    this.zyphra = new ZyphraClient({
+      apiKey: this.apiKey,
+    });
+  }
+
+  async testConnection() {
+    try {
+      // TODO: Add health check
+      return true;
+    } catch (error) {
+      logger.error(`Zonos TTS API connection test failed: ${error.message}`);
+      return false;
+    }
+  }
+
+  async convert(text) {
+    const response = await this.zyphra.audio.create({
+      text,
+      // Base64-encoded audio file for voice cloning	
+      // Lets get this from assets folder
+      speaker_audio: ""
+    });
+
+    return response.audio;
+  }
+}

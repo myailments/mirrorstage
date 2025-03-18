@@ -35,6 +35,15 @@ export class FileManager {
   }
 
   /**
+   * Get speaker audio file
+   */
+  verifyBaseAudio() {
+    if (!fs.existsSync(this.config.baseAudio)) {
+      throw new Error(`Base audio not found at ${this.config.baseAudio}`);
+    }
+    logger.info(`Verified base audio at ${this.config.baseAudio}`);
+  }
+  /**
    * Save audio file
    */
   saveAudio(buffer, format = 'wav') {

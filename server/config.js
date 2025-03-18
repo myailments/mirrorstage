@@ -14,8 +14,12 @@ const config = {
   // File paths
   baseVideoPath: process.env.BASE_VIDEO_PATH || './assets/base_video.mp4',
   outputDir: process.env.OUTPUT_DIR || './generated_videos',
-  
+  baseAudioPath: process.env.BASE_AUDIO_PATH || './assets/base_audio.wav',
   // Models
+  useZonosTTSAPI: process.env.USE_ZONOS_TTS_API || false,
+  zonosApiKey: process.env.ZONOS_API_KEY,
+
+  useZonosTTSLocal: process.env.USE_ZONOS_TTS_LOCAL || false,
   zonosTtsEndpoint: process.env.ZONOS_TTS_ENDPOINT || '/tts',
   latentsyncEndpoint: process.env.LATENTSYNC_ENDPOINT || '/sync',
 

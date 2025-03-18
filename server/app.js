@@ -22,6 +22,7 @@ class AIPipeline {
       baseUrl: options.baseUrl || config.baseUrl,
       baseVideo: options.baseVideo || config.baseVideoPath,
       outputDir: options.outputDir || config.outputDir,
+      baseAudio: options.baseAudio || config.baseAudioPath,
       maxConcurrent: Math.min(options.maxConcurrentProcessing || 4, 20),
       minPriority: 2,
       checkInterval: 1000,
@@ -30,7 +31,10 @@ class AIPipeline {
       latentSyncPort: config.latentSyncPort,
       latentSyncEndpoint: config.latentsyncEndpoint,
       useElevenLabs: options.useElevenLabs || config.useElevenLabs,
-      useFalLatentSync: options.useFalLatentSync || config.useFalLatentSync
+      useFalLatentSync: options.useFalLatentSync || config.useFalLatentSync,
+      useZonosTTSLocal: options.useZonosTTSLocal || config.useZonosTTSLocal,
+      useZonosTTSAPI: options.useZonosTTSAPI || config.useZonosTTSAPI,
+      zonosApiKey: options.zonosApiKey || config.zonosApiKey,
     };
 
     // Single queue with status tracking

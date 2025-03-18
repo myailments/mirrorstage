@@ -1,7 +1,7 @@
 import { logger } from '../utils/logger.js';
 import { FileManager } from './FileManager.js';
 import { MessageEvaluator } from './Evaluator.js';
-import { ZonosTTS, ElevenLabsTTS } from './TTS.js';
+import { ZonosTTS, ElevenLabsTTS, ZonosTTSAPI } from './TTS.js';
 import { LocalLatentSync, FalLatentSync } from './VideoSync.js';
 import { TextGenerator } from './TextGenerator.js';
 
@@ -19,6 +19,7 @@ export class PipelineInitializer {
       const fileManager = new FileManager(this.config);
       await fileManager.initializeDirectories();
       fileManager.verifyBaseVideo();
+      fileManager.verifyBaseAudio();
 
 
       // Initialize services
@@ -28,12 +29,14 @@ export class PipelineInitializer {
         textGenerator: new TextGenerator(this.config),
         tts: this.config.useElevenLabs ? 
           new ElevenLabsTTS(this.config) : 
-          new ZonosTTS(this.config),
+          this.config.useZonosTTSLocal ?
+          new ZonosTTS(this.config) : 
+          this.config.useZonosTTSAPI ?
+          new ZonosTTSAPI(this.config) : null,
         sync: this.config.useFalLatentSync ? 
           new FalLatentSync(this.config) : 
           new LocalLatentSync(this.config)
       };
-      
 
       // Test service connections
       await this.testServices(services);
