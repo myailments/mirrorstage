@@ -34,6 +34,8 @@ class AIPipeline {
       useFalLatentSync: options.useFalLatentSync || config.useFalLatentSync,
       useZonosTTSLocal: options.useZonosTTSLocal || config.useZonosTTSLocal,
       useZonosTTSAPI: options.useZonosTTSAPI || config.useZonosTTSAPI,
+      useCloudyAPI: options.useCloudyAPI || config.useCloudyAPI,
+
       zonosApiKey: options.zonosApiKey || config.zonosApiKey,
     };
 
@@ -147,23 +149,26 @@ class AIPipeline {
       this.updateStatus(item, AIPipeline.Status.GENERATING_RESPONSE);
       const response = await this.textGenerator.generateText(item.message);
       item.response = response;
+      logger.info(`Generated response: ${response}`);
 
       // Generate speech
       this.updateStatus(item, AIPipeline.Status.GENERATING_SPEECH);
       const audioPath = await this.tts.convert(response);
       item.audioPath = audioPath;
-
+      logger.info(`Generated speech at: ${audioPath}`);
       // Generate video
       this.updateStatus(item, AIPipeline.Status.GENERATING_VIDEO);
       const videoPath = await this.sync.process(audioPath);
       item.videoPath = videoPath;
-
-      // Cleanup audio file
-      fs.unlinkSync(audioPath);
+      logger.info(`Generated video at: ${videoPath}`);
+      
 
       // Mark as completed
       this.updateStatus(item, AIPipeline.Status.COMPLETED);
 
+      // Clean up files
+      fs.unlinkSync(audioPath);
+      // fs.unlinkSync(videoPath);
     } catch (error) {
       logger.error(`Pipeline error for ${item.messageId}: ${error.message}`);
       this.updateStatus(item, AIPipeline.Status.FAILED);
@@ -254,19 +259,61 @@ class AIPipeline {
 // Initialize pipeline
 const pipeline = new AIPipeline();
 
-// Initialize before starting server
-(async () => {
-  try {
-    await pipeline.initialize();
-    
-    // Start server
-    const PORT = process.env.PORT || 3000;
-    app.listen(PORT, () => logger.info(`Server running on port ${PORT}`));
-  } catch (error) {
-    logger.error(`Failed to initialize pipeline: ${error.message}`);
-    process.exit(1);
-  }
-})();
+// Add CLI input handling
+if (process.argv.includes('--cli')) {
+  import('readline/promises').then(({ createInterface }) => {
+    const readline = createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
+
+    const processCLIInput = async () => {
+      try {
+        const input = await readline.question('Enter message (or "exit" to quit): ');
+        
+        if (input.toLowerCase() === 'exit') {
+          readline.close();
+          process.exit(0);
+        }
+
+        const result = await pipeline.handleUserInput('cli-user', input);
+        logger.info(`Processing message ${result.messageId}`);
+        
+        // Wait briefly before asking for next input to allow status logging
+        setTimeout(processCLIInput, 500);
+      } catch (error) {
+        logger.error(`CLI input error: ${error.message}`);
+        processCLIInput();
+      }
+    };
+
+    // Initialize CLI mode after pipeline is ready
+    (async () => {
+      try {
+        await pipeline.initialize();
+        logger.info('CLI mode activated - ready for input');
+        processCLIInput();
+      } catch (error) {
+        logger.error(`Failed to initialize pipeline: ${error.message}`);
+        process.exit(1);
+      }
+    })();
+  });
+} else {
+  // Original server initialization
+  (async () => {
+    try {
+      await pipeline.initialize();
+      
+      // Start server
+      const PORT = process.env.PORT || 3000;
+      app.listen(PORT, () => logger.info(`Server running on port ${PORT}`));
+    } catch (error) {
+      logger.error(`Failed to initialize pipeline: ${error.message}`);
+      process.exit(1);
+    }
+  })();
+}
 
 // Express routes
 app.post('/input', async (req, res) => {

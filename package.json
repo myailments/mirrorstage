@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node server/app.js",
     "dev": "nodemon server/app.js",
-    "setup": "bash scripts/setup.sh"
+    "setup": "bash scripts/setup.sh",
+    "cli": "node server/app.js --cli"
   },
   "dependencies": {
     "@fal-ai/client": "^1.2.3",

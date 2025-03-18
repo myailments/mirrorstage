@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { logger } from '../utils/logger.js';
-import { ZyphraClient } from '@zyphra/client';
+import { ZyphraClient, ZyphraError } from '@zyphra/client';
 
 // Base TTS class
 class TTS {
@@ -65,6 +65,7 @@ export class ElevenLabsTTS extends TTS {
     super();
     this.apiKey = config.elevenLabsApiKey || process.env.ELEVENLABS_API_KEY;
     this.voiceId = config.elevenLabsVoiceId || '21m00Tcm4TlvDq8ikWAM';
+    this.outputDir = config.outputDir;
   }
 
   async testConnection() {
@@ -132,12 +133,17 @@ export class ZonosTTSAPI extends TTS {
     this.zyphra = new ZyphraClient({
       apiKey: this.apiKey,
     });
+    this.baseAudio = config.baseAudio;
+    this.outputDir = config.outputDir;
+    // this.config = config.zonosTTSAPIConfig;
   }
 
   async testConnection() {
     try {
-      // TODO: Add health check
-      return true;
+     if (!this.zyphra) {
+      throw new Error("Zyphra client not initialized");
+     }
+     return true;
     } catch (error) {
       logger.error(`Zonos TTS API connection test failed: ${error.message}`);
       return false;
@@ -145,13 +151,27 @@ export class ZonosTTSAPI extends TTS {
   }
 
   async convert(text) {
-    const response = await this.zyphra.audio.create({
-      text,
-      // Base64-encoded audio file for voice cloning	
-      // Lets get this from assets folder
-      speaker_audio: ""
-    });
-
-    return response.audio;
+    try {
+      const response = await this.zyphra.audio.speech.create({
+        text,
+        speaker_audio: fs.readFileSync(this.baseAudio, 'base64'),
+        // ...this.config.zonosTTSAPIConfig
+      });
+      const audioBuffer = await response.arrayBuffer();
+      const audioPath = path.join(this.outputDir, `speech_${Date.now()}.wav`);
+      fs.writeFileSync(audioPath, Buffer.from(audioBuffer));
+      
+      return audioPath;
+      
+      
+    } catch (error) {
+      if (error instanceof ZyphraError) {
+        logger.error(`Zonos TTS API error (ZyphraError): ${error.statusCode} - ${error.response}`);
+        throw error;
+      } else {
+        logger.error(`Zonos TTS API error: ${error.message}`);
+        throw error;
+      }
+    }
   }
 }

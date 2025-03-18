@@ -1,9 +1,13 @@
 import { z } from 'zod';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { logger } from '../utils/logger.js';
+import { OpenAI } from 'openai';
 
 export class MessageEvaluator {
   constructor() {
+    this.openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
     this.schema = z.object({
       evaluatedMessages: z.array(z.object({
         userId: z.string(),
@@ -17,8 +21,8 @@ export class MessageEvaluator {
 
   async evaluateInputs(inputs) {
     try {
-      const completion = await openai.beta.chat.completions.parse({
-        model: "gpt-4-turbo-preview",
+      const completion = await this.openai.beta.chat.completions.parse({
+        model: "gpt-4o-mini",
         messages: [
           {
             role: "system",

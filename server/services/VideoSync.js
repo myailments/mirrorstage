@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { fal } from "@fal-ai/client";
+// import { fal } from "@fal-ai/client";
 import { logger } from "../utils/logger.js";
 
 // Base VideoSync class
@@ -16,7 +16,7 @@ export class LocalLatentSync extends VideoSync {
     this.baseUrl = config.baseUrl;
     this.port = config.latentSyncPort;
     this.endpoint = config.latentsyncEndpoint;
-    this.baseVideo = config.baseVideoPath;
+    this.baseVideo = config.baseVideo;
   }
 
   async testConnection() {
@@ -74,17 +74,28 @@ export class LocalLatentSync extends VideoSync {
 export class FalLatentSync extends VideoSync {
   constructor(config) {
     super();
-    this.apiKey = config.falApiKey || process.env.FAL_KEY;
-    this.baseVideo = config.baseVideoPath;
 
+    this.apiKey = config.falApiKey || process.env.FAL_KEY;
+    this.baseVideo = config.baseVideo;
+    this.outputDir = config.outputDir;
+    this.fal = null;
+
+    this.initialize();
+
+  }
+  
+
+  async initialize() {
+    const { fal } = await import('@fal-ai/client');
     fal.config({ credentials: this.apiKey });
+    this.fal = fal;
   }
 
   async testConnection() {
     try {
-      if (!this.apiKey) {
-        throw new Error("FalLatentSync API key not found");
-      }
+     if (!this.fal) {
+      throw new Error("FalLatentSync not initialized");
+     }
 
       return true;
     } catch (error) {
@@ -99,11 +110,11 @@ export class FalLatentSync extends VideoSync {
       const videoFile = fs.readFileSync(this.baseVideo);
 
       const [audioUrl, videoUrl] = await Promise.all([
-        fal.storage.upload(new Blob([audioFile], { type: "audio/wav" })),
-        fal.storage.upload(new Blob([videoFile], { type: "video/mp4" })),
+        this.fal.storage.upload(new Blob([audioFile], { type: "audio/wav" })),
+        this.fal.storage.upload(new Blob([videoFile], { type: "video/mp4" })),
       ]);
 
-      const result = await fal.subscribe("fal-ai/latentsync", {
+      const result = await this.fal.subscribe("fal-ai/latentsync", {
         input: {
           video_url: videoUrl,
           audio_url: audioUrl,
@@ -119,7 +130,7 @@ export class FalLatentSync extends VideoSync {
 
       const videoResponse = await fetch(result.data.video.url);
       const videoBuffer = await videoResponse.arrayBuffer();
-      const videoPath = path.join(config.outputDir, `video_${Date.now()}.mp4`);
+      const videoPath = path.join(this.outputDir, `video_${Date.now()}.mp4`);
 
       fs.writeFileSync(videoPath, Buffer.from(videoBuffer));
       return videoPath;

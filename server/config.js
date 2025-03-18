@@ -29,6 +29,8 @@ const config = {
   useElevenLabs: false,
   elevenLabsVoiceId: '4ktOZjIcYueSlqN5UZjv',
   elevenLabsApiKey: process.env.ELEVENLABS_API_KEY,
+
+  useCloudyAPI: false,
     
   useFalLatentSync: true,
   falApiKey: process.env.FAL_KEY,

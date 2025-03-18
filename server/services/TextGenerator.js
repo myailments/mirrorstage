@@ -15,7 +15,11 @@ export class TextGenerator {
    */
   async generateText(message) {
     try {
-      return await this.useCloudyAPI(message);
+      if (this.config.useCloudyAPI) {
+        return await this.useCloudyAPI(message);
+      } else {
+        return await this.useOpenAI(message);
+      }
     } catch (error) {
       logger.warn(`Cloudy API failed, falling back to OpenAI: ${error.message}`);
       return await this.useOpenAI(message);
