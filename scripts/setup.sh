@@ -14,28 +14,26 @@ npm install
 echo "Creating directories..."
 mkdir -p generated_videos logs assets
 
-# Set up Python environments for models
-echo "Setting up Python environments..."
+# Set up Python environments and services
+echo "Setting up services..."
 
 # Set up Zonos TTS
-cd models/zonos-tts
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-deactivate
-cd ../..
+echo "Setting up Zonos TTS..."
+./scripts/setup_zonos.sh
 
 # Set up LatentSync
-cd models/latentsync
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-deactivate
-cd ../..
+echo "Setting up LatentSync..."
+./scripts/setup_latentsync.sh
 
 # Install PM2 globally
 echo "Installing PM2..."
 npm install -g pm2
 
+# Install ecosystem.config.js
+echo "Installing ecosystem.config.js..."
+cp ecosystem.config.js.example ecosystem.config.js
+
 echo "Setup complete! Please place a base video in the assets directory."
 echo "Then run 'cp .env.example .env' and edit the .env file with your configuration."
+echo "Zonos TTS is running on port 8001"
+echo "LatentSync is running on port 8002"

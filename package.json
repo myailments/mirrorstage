@@ -10,11 +10,13 @@
     "setup": "bash scripts/setup.sh"
   },
   "dependencies": {
+    "@fal-ai/client": "^1.2.3",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "form-data": "^4.0.0",
     "node-fetch": "^3.3.2",
-    "openai": "^4.87.3"
+    "openai": "^4.87.3",
+    "zod": "^3.24.2"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"

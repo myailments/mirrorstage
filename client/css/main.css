@@ -33,3 +33,29 @@ h1 {
   border-left: 4px solid #3498db;
   margin-bottom: 20px;
 }
+
+.message.processing {
+    position: relative;
+}
+
+.message.processing::after {
+    content: '...';
+    animation: processing 1.5s infinite;
+    position: absolute;
+    margin-left: 4px;
+}
+
+@keyframes processing {
+    0% { content: '.'; }
+    33% { content: '..'; }
+    66% { content: '...'; }
+}
+
+#queueStatus {
+    display: inline-block;
+    padding: 8px;
+    border-radius: 4px;
+    background-color: rgba(0, 0, 0, 0.05);
+    margin: 8px 0;
+    font-family: monospace;
+}
