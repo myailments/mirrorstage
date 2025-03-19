@@ -307,7 +307,7 @@ async function playNextVideo(videoData) {
         await videoPlayer.play();
         
         // Mark as streamed on the server
-        await fetch(`${API_BASE_URL}/stream/${videoData.videoPath}`, {
+        await fetch(`${API_BASE_URL}/stream/${videoData.messageId}`, {
             method: 'POST'
         });
         

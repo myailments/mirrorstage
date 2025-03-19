@@ -2,13 +2,17 @@
   "name": "stream-service",
   "version": "0.1.0",
   "description": "AI-powered video pipeline with OpenAI, Zonos TTS, and LatentSync",
-  "main": "server/app.js",
+  "main": "dist/server/app.js",
   "type": "module",
   "scripts": {
-    "start": "node server/app.js",
-    "dev": "nodemon server/app.js",
+    "start": "node dist/server/app.js",
+    "dev": "nodemon --exec tsx server/app.ts",
     "setup": "bash scripts/setup.sh",
-    "cli": "node server/app.js --cli"
+    "cli": "node dist/server/app.js --cli",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "start:dev": "tsx server/app.ts",
+    "cli:dev": "tsx server/app.ts --cli"
   },
   "dependencies": {
     "@fal-ai/client": "^1.2.3",
@@ -21,6 +25,11 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
-    "nodemon": "^3.1.9"
+    "@types/express": "^4.17.13",
+    "@types/node": "^22.13.10",
+    "nodemon": "^3.1.9",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.7.0",
+    "typescript": "^5.8.2"
   }
 }

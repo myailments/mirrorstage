@@ -1,12 +1,21 @@
-// app.js - Main application for Lambda Cloud AI Video Pipeline
+// app.ts - Main application for Lambda Cloud AI Video Pipeline
 import 'dotenv/config';
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import config from './config.js';
-import { logger } from './utils/logger.js';
-import { PipelineInitializer } from './services/PipelineInitializer.js';
+
+import config from './config.ts';
+import { logger } from './utils/logger.ts';
+import { PipelineInitializer } from './services/PipelineInitializer.ts';
+import { 
+  Config, 
+  PipelineItem, 
+  PipelineStatus, 
+  CompletedVideo,
+  PipelineStatusSummary,
+  InputResponse,
+} from './types/index.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,37 +25,75 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../client')));
 
+
+interface AIPipelineOptions {
+  baseUrl?: string;
+  baseVideo?: string;
+  outputDir?: string;
+  baseAudio?: string;
+  maxConcurrentProcessing?: number;
+  useElevenLabs?: boolean;
+  useFalLatentSync?: boolean;
+  useZonosTTSLocal?: boolean;
+  useZonosTTSAPI?: boolean;
+  useCloudyAPI?: boolean;
+  zonosApiKey?: string;
+  testMode?: boolean;
+}
+
 class AIPipeline {
-  constructor(options = {}) {
+  config: Config;
+  pipeline: Map<string, PipelineItem>;
+  fileManager: any;
+  evaluator: any;
+  textGenerator: any;
+  tts: any;
+  sync: any;
+
+  static Status = PipelineStatus;
+
+  constructor(options: AIPipelineOptions = {}) {
     this.config = {
       baseUrl: options.baseUrl || config.baseUrl,
-      baseVideo: options.baseVideo || config.baseVideoPath,
+      baseVideoPath: options.baseVideo || config.baseVideoPath,
       outputDir: options.outputDir || config.outputDir,
-      baseAudio: options.baseAudio || config.baseAudioPath,
+      baseAudioPath: options.baseAudio || config.baseAudioPath,
       maxConcurrent: Math.min(options.maxConcurrentProcessing || 4, 20),
       minPriority: 2,
       checkInterval: 1000,
       zonosTtsPort: config.zonosTtsPort,
       zonosTtsEndpoint: config.zonosTtsEndpoint,
       latentSyncPort: config.latentSyncPort,
-      latentSyncEndpoint: config.latentsyncEndpoint,
+      latentsyncEndpoint: config.latentsyncEndpoint,
       useElevenLabs: options.useElevenLabs || config.useElevenLabs,
       useFalLatentSync: options.useFalLatentSync || config.useFalLatentSync,
       useZonosTTSLocal: options.useZonosTTSLocal || config.useZonosTTSLocal,
       useZonosTTSAPI: options.useZonosTTSAPI || config.useZonosTTSAPI,
       useCloudyAPI: options.useCloudyAPI || config.useCloudyAPI,
-
       zonosApiKey: options.zonosApiKey || config.zonosApiKey,
+      falApiKey:  config.falApiKey,
+      openaiApiKey: config.openaiApiKey,
+      elevenLabsApiKey: config.elevenLabsApiKey,
+      // Include these required config properties
+      port: config.port,
+      
+      host: config.host,
+      elevenLabsVoiceId: config.elevenLabsVoiceId,
+      minQueueSize: config.minQueueSize,
+      maxQueueSize: config.maxQueueSize,
+      
+      // Test mode
+      testMode: options.testMode || config.testMode,
     };
 
     // Single queue with status tracking
-    this.pipeline = new Map(); // messageId -> PipelineItem
+    this.pipeline = new Map<string, PipelineItem>(); // messageId -> PipelineItem
   }
 
   /**
    * Initialize the pipeline
    */
-  async initialize() {
+  async initialize(): Promise<boolean> {
     const initializer = new PipelineInitializer(this.config);
     const services = await initializer.initialize();
 
@@ -61,34 +108,20 @@ class AIPipeline {
   }
 
   /**
-   * Pipeline Item Status Enum
-   */
-  static Status = {
-    RECEIVED: 'received',
-    EVALUATING: 'evaluating',
-    REJECTED: 'rejected',
-    GENERATING_RESPONSE: 'generating_response',
-    GENERATING_SPEECH: 'generating_speech',
-    GENERATING_VIDEO: 'generating_video',
-    COMPLETED: 'completed',
-    FAILED: 'failed'
-  };
-
-  /**
    * Handle new user input
    */
-  async handleUserInput(userId, message) {
+  async handleUserInput(userId: string, message: string): Promise<InputResponse> {
     const messageId = `${userId}-${Date.now()}`;
     
     // Create pipeline item
-    const pipelineItem = {
+    const pipelineItem: PipelineItem = {
       messageId,
       userId,
       message,
-      status: AIPipeline.Status.RECEIVED,
+      status: PipelineStatus.RECEIVED,
       timestamp: Date.now(),
       updates: [{
-        status: AIPipeline.Status.RECEIVED,
+        status: PipelineStatus.RECEIVED,
         timestamp: Date.now()
       }]
     };
@@ -97,19 +130,19 @@ class AIPipeline {
     logger.info(`New input received: ${messageId}`);
 
     // Start processing if capacity available
-    if (this.getActiveProcessingCount() < this.config.maxConcurrent) {
+    if (this.getActiveProcessingCount() < this.config.maxConcurrent!) {
       this.processItem(pipelineItem).catch(err => 
-        logger.error(`Failed to process item ${messageId}: ${err.message}`)
+        logger.error(`Failed to process item ${messageId}: ${err instanceof Error ? err.message : String(err)}`)
       );
     }
 
-    return { messageId, status: AIPipeline.Status.RECEIVED };
+    return { messageId, status: PipelineStatus.RECEIVED };
   }
 
   /**
    * Update item status with timestamp
    */
-  updateStatus(item, status) {
+  updateStatus(item: PipelineItem, status: PipelineStatus): void {
     item.status = status;
     item.updates.push({
       status,
@@ -121,58 +154,60 @@ class AIPipeline {
   /**
    * Get count of items being actively processed
    */
-  getActiveProcessingCount() {
+  getActiveProcessingCount(): number {
     return Array.from(this.pipeline.values()).filter(item => 
-      item.status !== AIPipeline.Status.RECEIVED &&
-      item.status !== AIPipeline.Status.COMPLETED &&
-      item.status !== AIPipeline.Status.REJECTED &&
-      item.status !== AIPipeline.Status.FAILED
+      item.status !== PipelineStatus.RECEIVED &&
+      item.status !== PipelineStatus.COMPLETED &&
+      item.status !== PipelineStatus.REJECTED &&
+      item.status !== PipelineStatus.FAILED
     ).length;
   }
 
   /**
    * Process a single item through the pipeline
    */
-  async processItem(item) {
+  async processItem(item: PipelineItem): Promise<void> {
     try {
       // Evaluate
-      this.updateStatus(item, AIPipeline.Status.EVALUATING);
+      this.updateStatus(item, PipelineStatus.EVALUATING);
       const evaluation = await this.evaluator.evaluateInputs([item]);
       const evaluated = evaluation[0];
 
-      if (evaluated.priority < this.config.minPriority) {
-        this.updateStatus(item, AIPipeline.Status.REJECTED);
+      if (evaluated.priority < this.config.minPriority!) {
+        this.updateStatus(item, PipelineStatus.REJECTED);
         return;
       }
 
       // Generate response using the service
-      this.updateStatus(item, AIPipeline.Status.GENERATING_RESPONSE);
+      this.updateStatus(item, PipelineStatus.GENERATING_RESPONSE);
       const response = await this.textGenerator.generateText(item.message);
       item.response = response;
       logger.info(`Generated response: ${response}`);
 
       // Generate speech
-      this.updateStatus(item, AIPipeline.Status.GENERATING_SPEECH);
+      this.updateStatus(item, PipelineStatus.GENERATING_SPEECH);
       const audioPath = await this.tts.convert(response);
       item.audioPath = audioPath;
       logger.info(`Generated speech at: ${audioPath}`);
+      
       // Generate video
-      this.updateStatus(item, AIPipeline.Status.GENERATING_VIDEO);
+      this.updateStatus(item, PipelineStatus.GENERATING_VIDEO);
       const videoPath = await this.sync.process(audioPath);
       item.videoPath = videoPath;
       logger.info(`Generated video at: ${videoPath}`);
       
 
       // Mark as completed
-      this.updateStatus(item, AIPipeline.Status.COMPLETED);
-
+      this.updateStatus(item, PipelineStatus.COMPLETED);
       // Clean up files
-      fs.unlinkSync(audioPath);
-      // fs.unlinkSync(videoPath);
+      if (!this.config.testMode) {
+        fs.unlinkSync(audioPath);
+        // fs.unlinkSync(videoPath);
+      }
     } catch (error) {
-      logger.error(`Pipeline error for ${item.messageId}: ${error.message}`);
-      this.updateStatus(item, AIPipeline.Status.FAILED);
-      item.error = error.message;
+      logger.error(`Pipeline error for ${item.messageId}: ${error instanceof Error ? error.message : String(error)}`);
+      this.updateStatus(item, PipelineStatus.FAILED);
+      item.error = error instanceof Error ? error.message : String(error);
     }
 
     // Start processing next item if available
@@ -182,19 +217,19 @@ class AIPipeline {
   /**
    * Process next items if capacity available
    */
-  processNextItems() {
-    const availableSlots = this.config.maxConcurrent - this.getActiveProcessingCount();
+  processNextItems(): void {
+    const availableSlots = this.config.maxConcurrent! - this.getActiveProcessingCount();
     if (availableSlots <= 0) return;
 
     // Get pending items
     const pending = Array.from(this.pipeline.values())
-      .filter(item => item.status === AIPipeline.Status.RECEIVED)
+      .filter(item => item.status === PipelineStatus.RECEIVED)
       .sort((a, b) => a.timestamp - b.timestamp);
 
     // Process up to available slots
     pending.slice(0, availableSlots).forEach(item => {
       this.processItem(item).catch(err => 
-        logger.error(`Failed to process item ${item.messageId}: ${err.message}`)
+        logger.error(`Failed to process item ${item.messageId}: ${err instanceof Error ? err.message : String(err)}`)
       );
     });
   }
@@ -202,9 +237,13 @@ class AIPipeline {
   /**
    * Get all completed videos ready for playback
    */
-  getCompletedVideos() {
+  getCompletedVideos(): CompletedVideo[] {
     return Array.from(this.pipeline.values())
-      .filter(item => item.status === AIPipeline.Status.COMPLETED)
+      .filter((item): item is PipelineItem & { response: string, videoPath: string } => 
+        item.status === PipelineStatus.COMPLETED && 
+        typeof item.response === 'string' && 
+        typeof item.videoPath === 'string'
+      )
       .map(item => ({
         messageId: item.messageId,
         userId: item.userId,
@@ -219,10 +258,10 @@ class AIPipeline {
   /**
    * Mark video as played
    */
-  markVideoPlayed(messageId) {
+  markVideoPlayed(messageId: string): boolean {
     const item = this.pipeline.get(messageId);
-    if (item?.status === AIPipeline.Status.COMPLETED) {
-      fs.unlinkSync(item.videoPath);
+    if (item?.status === PipelineStatus.COMPLETED && item.videoPath) {
+      !this.config.testMode && fs.unlinkSync(item.videoPath);
       this.pipeline.delete(messageId);
       return true;
     }
@@ -232,16 +271,18 @@ class AIPipeline {
   /**
    * Get detailed pipeline status
    */
-  getStatus() {
+  getStatus(): PipelineStatusSummary {
     const items = Array.from(this.pipeline.values());
-    const countByStatus = Object.values(AIPipeline.Status).reduce((acc, status) => {
+    
+    // Initialize all status counts
+    const countByStatus = Object.values(PipelineStatus).reduce((acc, status) => {
       acc[status] = items.filter(item => item.status === status).length;
       return acc;
-    }, {});
+    }, {} as Record<PipelineStatus, number>);
 
     return {
       activeProcessing: this.getActiveProcessingCount(),
-      maxConcurrent: this.config.maxConcurrent,
+      maxConcurrent: this.config.maxConcurrent!,
       totalItems: items.length,
       statusCounts: countByStatus,
       recentUpdates: items
@@ -257,7 +298,7 @@ class AIPipeline {
 }
 
 // Initialize pipeline
-const pipeline = new AIPipeline();
+const pipeline = new AIPipeline({ testMode: false });
 
 // Add CLI input handling
 if (process.argv.includes('--cli')) {
@@ -267,7 +308,7 @@ if (process.argv.includes('--cli')) {
       output: process.stdout
     });
 
-    const processCLIInput = async () => {
+    const processCLIInput = async (): Promise<void> => {
       try {
         const input = await readline.question('Enter message (or "exit" to quit): ');
         
@@ -282,7 +323,7 @@ if (process.argv.includes('--cli')) {
         // Wait briefly before asking for next input to allow status logging
         setTimeout(processCLIInput, 500);
       } catch (error) {
-        logger.error(`CLI input error: ${error.message}`);
+        logger.error(`CLI input error: ${error instanceof Error ? error.message : String(error)}`);
         processCLIInput();
       }
     };
@@ -294,7 +335,7 @@ if (process.argv.includes('--cli')) {
         logger.info('CLI mode activated - ready for input');
         processCLIInput();
       } catch (error) {
-        logger.error(`Failed to initialize pipeline: ${error.message}`);
+        logger.error(`Failed to initialize pipeline: ${error instanceof Error ? error.message : String(error)}`);
         process.exit(1);
       }
     })();
@@ -309,24 +350,25 @@ if (process.argv.includes('--cli')) {
       const PORT = process.env.PORT || 3000;
       app.listen(PORT, () => logger.info(`Server running on port ${PORT}`));
     } catch (error) {
-      logger.error(`Failed to initialize pipeline: ${error.message}`);
+      logger.error(`Failed to initialize pipeline: ${error instanceof Error ? error.message : String(error)}`);
       process.exit(1);
     }
   })();
 }
 
-// Express routes
+// Express routes - using explicit string routes to fix type issues
 app.post('/input', async (req, res) => {
   const { userId, message } = req.body;
   if (!userId || !message) {
-    return res.status(400).json({ error: 'Missing required fields' });
+    res.status(400).json({ error: 'Missing required fields' });
+    return;
   }
 
   try {
     const result = await pipeline.handleUserInput(userId, message);
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 });
 
@@ -334,28 +376,67 @@ app.get('/status', (req, res) => {
   res.json(pipeline.getStatus());
 });
 
+// base video
+app.get('/base-video', function baseVideoHandler(req, res) {
+  // Convert the relative path to an absolute path
+  const videoPath = path.resolve(__dirname, '..', pipeline.config.baseVideoPath.replace(/^\.\//, ''));
+  
+  // Check if the file exists
+  if (!fs.existsSync(videoPath)) {
+    return res.status(404).json({ error: 'Base video file not found' });
+  }
+  
+  // Send the file
+  res.sendFile(videoPath);
+});
+
 app.get('/next-video', (req, res) => {
   const videos = pipeline.getCompletedVideos();
   if (videos.length === 0) {
-    return res.status(404).json({ error: 'No videos available' });
+    res.status(404).json({ error: 'No videos available' });
+    return;
   }
   res.json(videos[0]);
 });
 
-app.post('/stream/:messageId', (req, res) => {
-  const success = pipeline.markVideoPlayed(req.params.messageId);
+app.post('/stream/:messageId(*)', (req, res) => {
+  const messageId = req.params.messageId;
+  
+  const success = pipeline.markVideoPlayed(messageId);
   if (!success) {
-    return res.status(404).json({ error: 'Video not found or already played' });
+    res.status(404).json({ error: 'Video not found or already played' });
+    return;
   }
   res.json({ success: true });
 });
 
-app.get('/video/:filename', (req, res) => {
-  const videoPath = path.join(pipeline.config.outputDir, req.params.filename);
-  if (!fs.existsSync(videoPath)) {
-    return res.status(404).json({ error: 'Video not found' });
+app.get('/video/:filename(*)', (req, res) => {
+  const requestedPath = req.params.filename;
+  
+  // Try multiple possible paths
+  const possiblePaths = [
+    // Path 1: Direct file in outputDir
+    path.join(pipeline.config.outputDir, path.basename(requestedPath)),
+    
+    // Path 2: Full path appended to outputDir
+    path.join(pipeline.config.outputDir, requestedPath),
+    
+    // Path 3: Just the path as is (if outputDir is '')
+    requestedPath,
+    
+    // Path 4: As an absolute path from the project root
+    path.resolve(requestedPath)
+  ];
+  
+  // Try each path
+  for (const tryPath of possiblePaths) {
+    if (fs.existsSync(tryPath)) {
+      return res.sendFile(path.resolve(tryPath));
+    }
   }
-  res.sendFile(path.resolve(videoPath));
+  
+  // If we get here, none of the paths worked
+  res.status(404).json({ error: 'Video not found' });
 });
 
 app.get('/health', (req, res) => {

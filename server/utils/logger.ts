@@ -28,11 +28,14 @@ if (!fs.existsSync(logsDir)) {
 
 const logFile = path.join(logsDir, 'app.log');
 
-function log(level, message) {
+type LogLevel = 'INFO' | 'WARN' | 'ERROR';
+type LogMessage = string | object;
+
+function log(level: LogLevel, message: LogMessage): void {
   const timestamp = new Date().toISOString();
   
   // Plain message for file
-  const fileMessage = `[${timestamp}] [${level}] ${message}\n`;
+  const fileMessage = `[${timestamp}] [${level}] ${typeof message === 'object' ? JSON.stringify(message) : message}\n`;
   
   // Colored message for console
   let consoleColor = colors.reset;
@@ -70,7 +73,7 @@ function log(level, message) {
 }
 
 export const logger = {
-  info: (message) => log('INFO', message),
-  warn: (message) => log('WARN', message),
-  error: (message) => log('ERROR', message),
+  info: (message: LogMessage): void => log('INFO', message),
+  warn: (message: LogMessage): void => log('WARN', message),
+  error: (message: LogMessage): void => log('ERROR', message),
 };

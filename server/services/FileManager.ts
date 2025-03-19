@@ -1,16 +1,19 @@
 import fs from 'fs';
 import path from 'path';
 import { logger } from '../utils/logger.js';
+import { Config } from '../types/index.js';
 
 export class FileManager {
-  constructor(config) {
+  private config: Config;
+
+  constructor(config: Config) {
     this.config = config;
   }
 
   /**
    * Initialize required directories
    */
-  async initializeDirectories() {
+  async initializeDirectories(): Promise<void> {
     const directories = [
       this.config.outputDir,
       path.join(process.cwd(), '../assets')
@@ -27,26 +30,31 @@ export class FileManager {
   /**
    * Verify base video exists
    */
-  verifyBaseVideo() {
-    if (!fs.existsSync(this.config.baseVideo)) {
-      throw new Error(`Base video not found at ${this.config.baseVideo}`);
+  verifyBaseVideo(): void {
+    if (!fs.existsSync(this.config.baseVideoPath)) {
+      throw new Error(`Base video not found at ${this.config.baseVideoPath}`);
     }
-    logger.info(`Verified base video at ${this.config.baseVideo}`);
+    logger.info(`Verified base video at ${this.config.baseVideoPath}`);
   }
 
   /**
    * Get speaker audio file
    */
-  verifyBaseAudio() {
-    if (!fs.existsSync(this.config.baseAudio)) {
-      throw new Error(`Base audio not found at ${this.config.baseAudio}`);
+  verifyBaseAudio(): void {
+    const baseAudioPath = this.config.baseAudioPath;
+    if (!baseAudioPath) {
+      throw new Error('Base audio path is not defined in config');
     }
-    logger.info(`Verified base audio at ${this.config.baseAudio}`);
+    if (!fs.existsSync(baseAudioPath)) {
+      throw new Error(`Base audio not found at ${baseAudioPath}`);
+    }
+    logger.info(`Verified base audio at ${baseAudioPath}`);
   }
+  
   /**
    * Save audio file
    */
-  saveAudio(buffer, format = 'wav') {
+  saveAudio(buffer: Buffer, format = 'wav'): string {
     const filename = `speech_${Date.now()}.${format}`;
     const filepath = path.join(this.config.outputDir, filename);
     fs.writeFileSync(filepath, buffer);
@@ -56,7 +64,7 @@ export class FileManager {
   /**
    * Save video file
    */
-  saveVideo(buffer) {
+  saveVideo(buffer: Buffer): string {
     const filename = `video_${Date.now()}.mp4`;
     const filepath = path.join(this.config.outputDir, filename);
     fs.writeFileSync(filepath, buffer);
@@ -66,14 +74,14 @@ export class FileManager {
   /**
    * Delete file
    */
-  deleteFile(filepath) {
+  deleteFile(filepath: string): void {
     try {
       if (fs.existsSync(filepath)) {
         fs.unlinkSync(filepath);
         logger.info(`Deleted file: ${filepath}`);
       }
     } catch (error) {
-      logger.error(`Failed to delete file ${filepath}: ${error.message}`);
+      logger.error(`Failed to delete file ${filepath}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-} 
+}
