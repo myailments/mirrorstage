@@ -35,6 +35,18 @@ module.exports = {
         },
         watch: false,
         autorestart: true
+      },
+      {
+        name: 'musetalk',
+        cwd: './models/musetalk',
+        script: './start_server.sh',
+        env: {
+          FLASK_APP: 'server.py',
+          FLASK_ENV: 'production',
+          GUNICORN_TIMEOUT: '300'  // 5 minutes timeout
+        },
+        watch: false,
+        autorestart: true
       }
     ]
   };

@@ -23,9 +23,11 @@ export interface Config {
   useZonosTTSLocal: boolean;
   zonosTtsEndpoint: string;
   latentsyncEndpoint: string;
+  musetalkEndpoint: string;
 
   zonosTtsPort: number;
   latentSyncPort: number;
+  musetalkPort: number;
 
   useElevenLabs: boolean;
   elevenLabsVoiceId: string;
@@ -34,6 +36,7 @@ export interface Config {
   useCloudyAPI: boolean;
     
   useFalLatentSync: boolean;
+  useMusetalk: boolean;
   falApiKey?: string;
 
   // Queue configuration

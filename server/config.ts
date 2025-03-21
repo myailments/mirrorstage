@@ -33,9 +33,11 @@ const config: Config = {
   useZonosTTSLocal: process.env.USE_ZONOS_TTS_LOCAL === 'true',
   zonosTtsEndpoint: process.env.ZONOS_TTS_ENDPOINT || '/tts',
   latentsyncEndpoint: process.env.LATENTSYNC_ENDPOINT || '/sync',
+  musetalkEndpoint: process.env.MUSETALK_ENDPOINT || '/sync',
 
   zonosTtsPort: Number(process.env.ZONOS_TTS_PORT) || 8001,
   latentSyncPort: Number(process.env.LATENTSYNC_PORT) || 8002,
+  musetalkPort: Number(process.env.MUSETALK_PORT) || 8003,
 
   useElevenLabs: false,
   elevenLabsVoiceId: '4ktOZjIcYueSlqN5UZjv',
@@ -44,6 +46,7 @@ const config: Config = {
   useCloudyAPI: false,
     
   useFalLatentSync: true,
+  useMusetalk: process.env.USE_MUSETALK === 'true',
   falApiKey: process.env.FAL_KEY,
 
   // Queue configuration
