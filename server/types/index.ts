@@ -7,8 +7,11 @@ export interface Config {
   host: string;
   baseUrl: string;
 
-  // OpenAI configuration
+  // LLM configuration
   openaiApiKey?: string;
+  useDeepseekLocal?: boolean;
+  deepseekEndpoint?: string;
+  deepseekPort?: number;
   
   // File paths
   baseVideoPath: string;

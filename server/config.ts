@@ -18,8 +18,11 @@ const config: Config = {
   host: process.env.HOST || '0.0.0.0',
   baseUrl: process.env.BASE_URL || 'http://localhost',
 
-  // OpenAI configuration
+  // LLM configuration
   openaiApiKey: process.env.OPENAI_API_KEY,
+  useDeepseekLocal: process.env.USE_DEEPSEEK_LOCAL === 'true',
+  deepseekEndpoint: process.env.DEEPSEEK_ENDPOINT || '/v1',
+  deepseekPort: Number(process.env.DEEPSEEK_PORT) || 8000,
   
   // File paths
   baseVideoPath: process.env.BASE_VIDEO_PATH || './assets/base_video.mp4',
