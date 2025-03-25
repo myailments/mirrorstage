@@ -44,6 +44,12 @@ const config: Config = {
   zonosTtsEndpoint: process.env.ZONOS_TTS_ENDPOINT || '/tts',
   latentsyncEndpoint: process.env.LATENTSYNC_ENDPOINT || '/sync',
 
+  // MuseTalk configuration
+  // useMuseTalk: process.env.USE_MUSE_TALK === 'true',
+  useMuseTalk: true,
+  museTalkEndpoint: process.env.MUSE_TALK_ENDPOINT || '/sync',
+  museTalkPort: Number(process.env.MUSE_TALK_PORT) || 8080,
+
   zonosTtsPort: Number(process.env.ZONOS_TTS_PORT) || 8001,
   latentSyncPort: Number(process.env.LATENTSYNC_PORT) || 8002,
 
@@ -53,7 +59,7 @@ const config: Config = {
 
   useCloudyAPI: false,
     
-  useFalLatentSync: true,
+  useFalLatentSync: false,
   falApiKey: process.env.FAL_KEY,
 
   // Queue configuration

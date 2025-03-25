@@ -2,7 +2,7 @@ import { logger } from '../utils/logger.js';
 import { FileManager } from './FileManager.js';
 import { MessageEvaluator, TestMessageEvaluator } from './Evaluator.js';
 import { ZonosTTS, ElevenLabsTTS, ZonosTTSAPI, TestTTS } from './TTS.js';
-import { LocalLatentSync, FalLatentSync, TestVideoSync } from './VideoSync.js';
+import { LocalLatentSync, FalLatentSync, TestVideoSync, MuseTalkSync } from './VideoSync.js';
 import { TestTextGenerator, TextGenerator } from './TextGenerator.js';
 import type { Config } from '../types/index.js';
 import { TTSService, VideoSyncService } from './interfaces.js';
@@ -56,6 +56,8 @@ export class PipelineInitializer {
           new TestVideoSync(this.config) :
           this.config.useFalLatentSync ? 
           new FalLatentSync(this.config) : 
+          this.config.useMuseTalk ?
+          new MuseTalkSync(this.config) :
           new LocalLatentSync(this.config)
       };
 

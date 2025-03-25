@@ -34,6 +34,11 @@ export interface Config {
   zonosTtsEndpoint: string;
   latentsyncEndpoint: string;
 
+  // MuseTalk configuration
+  useMuseTalk?: boolean;
+  museTalkEndpoint?: string;
+  museTalkPort?: number;
+
   zonosTtsPort: number;
   latentSyncPort: number;
 
