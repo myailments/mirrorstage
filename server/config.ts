@@ -24,6 +24,13 @@ const config: Config = {
   deepseekEndpoint: process.env.DEEPSEEK_ENDPOINT || '/v1',
   deepseekPort: Number(process.env.DEEPSEEK_PORT) || 8000,
   
+  // OpenRouter configuration
+  useOpenRouter: process.env.USE_OPENROUTER === 'true',
+  openRouterApiKey: process.env.OPENROUTER_API_KEY,
+  openRouterModel: process.env.OPENROUTER_MODEL || 'deepseek/deepseek-chat-v3-0324:free',
+  openRouterSiteUrl: process.env.OPENROUTER_SITE_URL,
+  openRouterSiteName: process.env.OPENROUTER_SITE_NAME,
+  
   // File paths
   baseVideoPath: process.env.BASE_VIDEO_PATH || './assets/base_video.mp4',
   outputDir: process.env.OUTPUT_DIR || './generated_videos',

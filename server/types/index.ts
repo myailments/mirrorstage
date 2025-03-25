@@ -13,6 +13,13 @@ export interface Config {
   deepseekEndpoint?: string;
   deepseekPort?: number;
   
+  // OpenRouter configuration
+  useOpenRouter?: boolean;
+  openRouterApiKey?: string;
+  openRouterModel?: string;
+  openRouterSiteUrl?: string;
+  openRouterSiteName?: string;
+  
   // File paths
   baseVideoPath: string;
   baseAudio?: string;

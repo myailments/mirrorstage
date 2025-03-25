@@ -73,6 +73,14 @@ class AIPipeline {
       zonosApiKey: options.zonosApiKey || config.zonosApiKey,
       falApiKey:  config.falApiKey,
       openaiApiKey: config.openaiApiKey,
+      openRouterApiKey: config.openRouterApiKey,
+      openRouterModel: config.openRouterModel,
+      openRouterSiteUrl: config.openRouterSiteUrl,
+      openRouterSiteName: config.openRouterSiteName,
+      useOpenRouter: config.useOpenRouter,
+      useDeepseekLocal: config.useDeepseekLocal,
+      deepseekEndpoint: config.deepseekEndpoint,
+      deepseekPort: config.deepseekPort,
       elevenLabsApiKey: config.elevenLabsApiKey,
       // Include these required config properties
       port: config.port,
@@ -183,6 +191,7 @@ class AIPipeline {
       const response = await this.textGenerator.generateText(item.message);
       item.response = response;
       logger.info(`Generated response: ${response}`);
+
 
       // Generate speech
       this.updateStatus(item, PipelineStatus.GENERATING_SPEECH);

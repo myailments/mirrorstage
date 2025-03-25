@@ -22,6 +22,7 @@
     "form-data": "^4.0.0",
     "node-fetch": "^3.3.2",
     "openai": "^4.87.3",
+    "to-zalgo": "^1.0.1",
     "zod": "^3.24.2"
   },
   "devDependencies": {
