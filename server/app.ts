@@ -16,6 +16,8 @@ import {
   PipelineStatusSummary,
   InputResponse,
 } from './types/index.ts';
+import { VideoPlayer } from './services/VideoPlayer';
+import { VideoViewer, VideoPlayerType } from './services/VideoViewer.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -33,6 +35,8 @@ class AIPipeline {
   textGenerator: any;
   tts: any;
   sync: any;
+  private videoPlayer: VideoPlayer;
+  private videoViewer: VideoViewer;
 
   static Status = PipelineStatus;
 
@@ -42,6 +46,8 @@ class AIPipeline {
       maxConcurrent: Math.min(config.maxConcurrent || 4, 20)
     };
     this.pipeline = new Map<string, PipelineItem>(); 
+    this.videoPlayer = new VideoPlayer(this.config.baseVideoPath);
+    this.videoViewer = new VideoViewer(VideoPlayerType.FFPLAY);
   }
 
   /**
@@ -57,6 +63,12 @@ class AIPipeline {
     this.textGenerator = services.textGenerator;
     this.tts = services.tts;
     this.sync = services.sync;
+
+    // Start video viewer first
+    this.videoViewer.start();
+    
+    // Then start base video playback
+    await this.videoPlayer.startBaseVideo();
 
     return true;
   }
@@ -159,6 +171,11 @@ class AIPipeline {
         // fs.unlinkSync(audioPath);
         // fs.unlinkSync(videoPath);
       }
+
+      // When video is ready, play it
+      if (item.status === PipelineStatus.COMPLETED && item.videoPath) {
+        await this.videoPlayer.playResponseVideo(item.videoPath);
+      }
     } catch (error) {
       logger.error(`Pipeline error for ${item.messageId}: ${error instanceof Error ? error.message : String(error)}`);
       this.updateStatus(item, PipelineStatus.FAILED);
@@ -250,65 +267,85 @@ class AIPipeline {
         }))
     };
   }
+
+  // Add cleanup method
+  async cleanup(): Promise<void> {
+    await this.videoPlayer.stop();
+    this.videoViewer.stop();
+  }
 }
 
 // Initialize pipeline
 const pipeline = new AIPipeline();
 
-// Add CLI input handling
-if (process.argv.includes('--cli')) {
-  import('readline/promises').then(({ createInterface }) => {
-    const readline = createInterface({
+const startServer = async () => {
+  try {
+    await pipeline.initialize();
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, () => logger.info(`Server running on port ${PORT}`));
+  } catch (error) {
+    logger.error(`Failed to initialize pipeline: ${error}`);
+    process.exit(1);
+  }
+};
+
+const startCLI = async () => {
+  try {
+    // Initialize pipeline first
+    await pipeline.initialize();
+    
+    // Force a small delay to ensure video processes are started
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    const readline = (await import('node:readline')).createInterface({
       input: process.stdin,
       output: process.stdout
     });
 
-    const processCLIInput = async (): Promise<void> => {
-      try {
-        const input = await readline.question('Enter message (or "exit" to quit): ');
-        
-        if (input.toLowerCase() === 'exit') {
-          readline.close();
-          process.exit(0);
-        }
+    // Clear the console and show prompt
+    console.clear();
+    console.log('\nCLI mode activated - ready for input\n');
 
-        const result = await pipeline.handleUserInput('cli-user', input);
-        logger.info(`Processing message ${result.messageId}`);
-        
-        // Wait briefly before asking for next input to allow status logging
-        setTimeout(processCLIInput, 500);
-      } catch (error) {
-        logger.error(`CLI input error: ${error instanceof Error ? error.message : String(error)}`);
-        processCLIInput();
-      }
+    const processCLIInput = () => {
+      readline.question('Enter message (or "exit" to quit): ', async (input) => {
+        try {
+          if (input.toLowerCase() === 'exit') {
+            await pipeline.cleanup();
+            readline.close();
+            process.exit(0);
+          }
+
+          if (input.trim()) {
+            const result = await pipeline.handleUserInput('cli-user', input);
+            logger.info(`Processing message ${result.messageId}`);
+          }
+          
+          // Continue prompting
+          processCLIInput();
+        } catch (error) {
+          logger.error(`CLI input error: ${error}`);
+          processCLIInput();
+        }
+      });
     };
 
-    // Initialize CLI mode after pipeline is ready
-    (async () => {
-      try {
-        await pipeline.initialize();
-        logger.info('CLI mode activated - ready for input');
-        processCLIInput();
-      } catch (error) {
-        logger.error(`Failed to initialize pipeline: ${error instanceof Error ? error.message : String(error)}`);
-        process.exit(1);
-      }
-    })();
+    // Start input loop
+    processCLIInput();
+
+  } catch (error) {
+    logger.error(`Failed to initialize CLI: ${error}`);
+    process.exit(1);
+  }
+};
+
+// Choose mode based on command line argument
+if (process.argv.includes('--cli')) {
+  startCLI().catch(error => {
+    logger.error(`CLI startup error: ${error}`);
+    process.exit(1);
   });
 } else {
-  // Original server initialization
-  (async () => {
-    try {
-      await pipeline.initialize();
-      
-      // Start server
-      const PORT = process.env.PORT || 3000;
-      app.listen(PORT, () => logger.info(`Server running on port ${PORT}`));
-    } catch (error) {
-      logger.error(`Failed to initialize pipeline: ${error instanceof Error ? error.message : String(error)}`);
-      process.exit(1);
-    }
-  })();
+  startServer();
 }
 
 // Express routes - using explicit string routes to fix type issues
@@ -396,4 +433,17 @@ app.get('/video/:filename(*)', (req, res) => {
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date() });
+});
+
+// Graceful shutdown handlers
+process.on('SIGINT', async () => {
+  logger.info('Shutting down...');
+  await pipeline.cleanup();
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  logger.info('Shutting down...');
+  await pipeline.cleanup();
+  process.exit(0);
 });
