@@ -49,6 +49,35 @@ const config: Config = {
   baseVideoPath: process.env.BASE_VIDEO_PATH || './assets/base_video.mp4',
   outputDir: process.env.OUTPUT_DIR || './generated_videos',
   baseAudioPath: process.env.BASE_AUDIO_PATH || './assets/base_audio.wav',
+<<<<<<< HEAD
+=======
+  
+  // Models
+  useZonosTTSAPI: process.env.USE_ZONOS_TTS_API === 'true',
+  zonosApiKey: process.env.ZONOS_API_KEY,
+
+  useZonosTTSLocal: process.env.USE_ZONOS_TTS_LOCAL === 'true',
+  zonosTtsEndpoint: process.env.ZONOS_TTS_ENDPOINT || '/tts',
+  latentsyncEndpoint: process.env.LATENTSYNC_ENDPOINT || '/sync',
+
+  // MuseTalk configuration
+  // useMuseTalk: process.env.USE_MUSE_TALK === 'true',
+  useMuseTalk: true,
+  museTalkEndpoint: process.env.MUSE_TALK_ENDPOINT || '/sync',
+  museTalkPort: Number(process.env.MUSE_TALK_PORT) || 8080,
+
+  zonosTtsPort: Number(process.env.ZONOS_TTS_PORT) || 8001,
+  latentSyncPort: Number(process.env.LATENTSYNC_PORT) || 8002,
+
+  useElevenLabs: false,
+  elevenLabsVoiceId: '4ktOZjIcYueSlqN5UZjv',
+  elevenLabsApiKey: process.env.ELEVENLABS_API_KEY,
+
+  useCloudyAPI: false,
+    
+  useFalLatentSync: false,
+  falApiKey: process.env.FAL_KEY,
+>>>>>>> 1de14b63619ec75aa2275aa37e65c2a68b94eed5
 
   // Queue configuration
   minQueueSize: parseInt(process.env.MIN_QUEUE_SIZE || '3', 10),

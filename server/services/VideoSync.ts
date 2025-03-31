@@ -274,3 +274,49 @@ export class TestVideoSync extends BaseVideoSync {
     return true;
   }
 }
+
+// // MuseTalk implementation
+// export class MuseTalkSync extends BaseVideoSync {
+//   async process(audioPath: string): Promise<string> {
+//     try {
+//       const url = `http://localhost:${this.config.museTalkPort}${this.config.museTalkEndpoint}`;
+      
+//       const formData = new FormData();
+//       formData.append('audio', fs.createReadStream(audioPath));
+//       formData.append('video', fs.createReadStream(this.config.baseVideoPath));
+      
+//       const response = await fetch(url, {
+//         method: 'POST',
+//         body: formData,
+//       });
+
+//       if (!response.ok) {
+//         throw new Error(`MuseTalk server responded with ${response.status}: ${response.statusText}`);
+//       }
+
+//       // Save the video file
+//       const buffer = Buffer.from(await response.arrayBuffer());
+//       const outputDir = this.config.outputDir;
+//       const outputFile = path.join(outputDir, `musetalk_${Date.now()}.mp4`);
+      
+//       fs.writeFileSync(outputFile, buffer);
+//       logger.info(`Generated MuseTalk video: ${outputFile}`);
+      
+//       return outputFile;
+//     } catch (error) {
+//       logger.error(`MuseTalk sync error: ${error instanceof Error ? error.message : String(error)}`);
+//       throw error;
+//     }
+//   }
+
+//   async testConnection(): Promise<boolean> {
+//     try {
+//       const url = `http://localhost:${this.config.museTalkPort}/health`;
+//       const response = await fetch(url);
+//       return response.ok;
+//     } catch (error) {
+//       logger.warn(`MuseTalk connection test failed: ${error instanceof Error ? error.message : String(error)}`);
+//       return false;
+//     }
+//   }
+// }
