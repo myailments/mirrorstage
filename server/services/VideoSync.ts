@@ -145,6 +145,121 @@ export class FalLatentSync extends BaseVideoSync {
   }
 }
 
+// Sync Labs implementation
+export class SyncLabsSync extends BaseVideoSync {
+  private apiKey: string;
+
+  constructor(config: Config) {
+    super(config);
+    if (!config.syncLabsKey) {
+      throw new Error('Sync Labs API key is required');
+    }
+    this.apiKey = config.syncLabsKey;
+  }
+
+  async process(audioPath: string): Promise<string> {
+    try {
+      // Make API request to Sync Labs
+      const response = await fetch('https://api.sync.so/v2/generate', {
+        method: 'POST',
+        headers: {
+          'x-api-key': this.apiKey,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'sync-1.9.0-beta',
+          input: [
+            {
+              type: 'audio',
+              url: audioPath
+            },
+            {
+              type: 'video',
+              url: this.config.baseVideoPath
+            }
+          ]
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Sync Labs API error: ${response.status} ${response.statusText}`);
+      }
+
+      const jobData = await response.json() as { id: string };
+      logger.info(`Sync Labs job initiated: ${jobData.id}`);
+
+      // Poll for completion
+      const outputUrl = await this.pollForCompletion(jobData.id);
+      
+      // Download and save the video
+      const videoResponse = await fetch(outputUrl);
+      const videoBuffer = await videoResponse.arrayBuffer();
+      const outputPath = path.join(this.config.outputDir, `synclabs_${jobData.id}.mp4`);
+      
+      fs.writeFileSync(outputPath, Buffer.from(videoBuffer));
+      logger.info(`Sync Labs video downloaded: ${outputPath}`);
+
+      return outputPath;
+    } catch (error) {
+      logger.error(`Sync Labs error: ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
+    }
+  }
+
+  private async pollForCompletion(jobId: string): Promise<string> {
+    const maxAttempts = 60; // 5 minutes with 5-second intervals
+    let attempts = 0;
+
+    while (attempts < maxAttempts) {
+      const response = await fetch(`https://api.sync.so/v2/generate/${jobId}`, {
+        headers: {
+          'x-api-key': this.apiKey
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to check job status: ${response.status}`);
+      }
+
+      const jobStatus = await response.json() as { status: string, outputUrl?: string, error?: string };
+
+      if (jobStatus.status === 'COMPLETED' && jobStatus.outputUrl) {
+        return jobStatus.outputUrl;
+      }
+
+      if (jobStatus.status === 'FAILED') {
+        throw new Error(`Sync Labs job failed: ${jobStatus.error || 'Unknown error'}`);
+      }
+
+      // Wait 5 seconds before next attempt
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      attempts++;
+    }
+
+    throw new Error('Sync Labs job timed out');
+  }
+
+  async testConnection(): Promise<boolean> {
+    try {
+      const response = await fetch('https://api.sync.so/v2/generate', {
+        method: 'POST',
+        headers: {
+          'x-api-key': this.apiKey,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'sync-1.9.0-beta',
+          input: []
+        })
+      });
+      return response.status !== 401; // Check if authentication works
+    } catch (error) {
+      logger.warn(`Sync Labs connection test failed: ${error instanceof Error ? error.message : String(error)}`);
+      return false;
+    }
+  }
+}
+
 // Test serve a video we already have
 export class TestVideoSync extends BaseVideoSync {
   async process(audioPath: string): Promise<string> {

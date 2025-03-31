@@ -25,22 +25,6 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../client')));
 
-
-interface AIPipelineOptions {
-  baseUrl?: string;
-  baseVideo?: string;
-  outputDir?: string;
-  baseAudio?: string;
-  maxConcurrentProcessing?: number;
-  useElevenLabs?: boolean;
-  useFalLatentSync?: boolean;
-  useZonosTTSLocal?: boolean;
-  useZonosTTSAPI?: boolean;
-  useCloudyAPI?: boolean;
-  zonosApiKey?: string;
-  testMode?: boolean;
-}
-
 class AIPipeline {
   config: Config;
   pipeline: Map<string, PipelineItem>;
@@ -52,50 +36,12 @@ class AIPipeline {
 
   static Status = PipelineStatus;
 
-  constructor(options: AIPipelineOptions = {}) {
+  constructor() {
     this.config = {
-      baseUrl: options.baseUrl || config.baseUrl,
-      baseVideoPath: options.baseVideo || config.baseVideoPath,
-      outputDir: options.outputDir || config.outputDir,
-      baseAudioPath: options.baseAudio || config.baseAudioPath,
-      maxConcurrent: Math.min(options.maxConcurrentProcessing || 4, 20),
-      minPriority: 2,
-      checkInterval: 1000,
-      zonosTtsPort: config.zonosTtsPort,
-      zonosTtsEndpoint: config.zonosTtsEndpoint,
-      latentSyncPort: config.latentSyncPort,
-      latentsyncEndpoint: config.latentsyncEndpoint,
-      useElevenLabs: options.useElevenLabs || config.useElevenLabs,
-      useFalLatentSync: options.useFalLatentSync || config.useFalLatentSync,
-      useZonosTTSLocal: options.useZonosTTSLocal || config.useZonosTTSLocal,
-      useZonosTTSAPI: options.useZonosTTSAPI || config.useZonosTTSAPI,
-      useCloudyAPI: options.useCloudyAPI || config.useCloudyAPI,
-      zonosApiKey: options.zonosApiKey || config.zonosApiKey,
-      falApiKey:  config.falApiKey,
-      openaiApiKey: config.openaiApiKey,
-      openRouterApiKey: config.openRouterApiKey,
-      openRouterModel: config.openRouterModel,
-      openRouterSiteUrl: config.openRouterSiteUrl,
-      openRouterSiteName: config.openRouterSiteName,
-      useOpenRouter: config.useOpenRouter,
-      useDeepseekLocal: config.useDeepseekLocal,
-      deepseekEndpoint: config.deepseekEndpoint,
-      deepseekPort: config.deepseekPort,
-      elevenLabsApiKey: config.elevenLabsApiKey,
-      // Include these required config properties
-      port: config.port,
-      
-      host: config.host,
-      elevenLabsVoiceId: config.elevenLabsVoiceId,
-      minQueueSize: config.minQueueSize,
-      maxQueueSize: config.maxQueueSize,
-      
-      // Test mode
-      testMode: options.testMode || config.testMode,
+      ...config,
+      maxConcurrent: Math.min(config.maxConcurrent || 4, 20)
     };
-
-    // Single queue with status tracking
-    this.pipeline = new Map<string, PipelineItem>(); // messageId -> PipelineItem
+    this.pipeline = new Map<string, PipelineItem>(); 
   }
 
   /**
@@ -210,7 +156,7 @@ class AIPipeline {
       this.updateStatus(item, PipelineStatus.COMPLETED);
       // Clean up files
       if (!this.config.testMode) {
-        fs.unlinkSync(audioPath);
+        // fs.unlinkSync(audioPath);
         // fs.unlinkSync(videoPath);
       }
     } catch (error) {
@@ -270,7 +216,7 @@ class AIPipeline {
   markVideoPlayed(messageId: string): boolean {
     const item = this.pipeline.get(messageId);
     if (item?.status === PipelineStatus.COMPLETED && item.videoPath) {
-      !this.config.testMode && fs.unlinkSync(item.videoPath);
+      // !this.config.testMode && fs.unlinkSync(item.videoPath);
       this.pipeline.delete(messageId);
       return true;
     }
@@ -307,7 +253,7 @@ class AIPipeline {
 }
 
 // Initialize pipeline
-const pipeline = new AIPipeline({ testMode: false });
+const pipeline = new AIPipeline();
 
 // Add CLI input handling
 if (process.argv.includes('--cli')) {

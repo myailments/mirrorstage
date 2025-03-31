@@ -40,6 +40,9 @@ let lastVideoCheck = Date.now();
 let messageCounter = 0;
 const pendingMessages = new Set();
 
+// Add to State section
+let nextVideoEndTime = 0;
+
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('DOM Content Loaded');
@@ -295,12 +298,24 @@ async function playNextVideo(videoData) {
     generatedResponse.textContent = `Response: ${videoData.generatedText}`;
     
     try {
-        // Load and play the new video
+        // Wait for current loop to finish if we're playing base video
+        if (currentlyPlaying === 'base-video') {
+            const timeUntilEnd = videoPlayer.duration - videoPlayer.currentTime;
+            if (timeUntilEnd > 0.1) { // If we're not already at the end
+                await new Promise(resolve => setTimeout(resolve, timeUntilEnd * 1000));
+            }
+        }
+
+        // Load the new video
         videoPlayer.src = `${API_BASE_URL}/video/${videoData.videoPath}`;
         videoPlayer.loop = false;
         videoPlayer.muted = false;
         
-        // Keep track of what we're playing
+        // Store the duration once the video is loaded
+        videoPlayer.addEventListener('loadedmetadata', () => {
+            nextVideoEndTime = videoPlayer.duration;
+        }, { once: true });
+        
         currentlyPlaying = videoData.videoPath;
         
         // Play the video
@@ -328,7 +343,17 @@ function onVideoEnded() {
 async function resetToBaseVideo() {
     console.log('Resetting to base video');
     try {
-        await ensureBaseVideoPlaying();
+        videoPlayer.src = `${API_BASE_URL}/base-video`;
+        videoPlayer.loop = true;
+        videoPlayer.muted = true;
+        
+        // Once the base video is loaded, set its time to where the response video ended
+        videoPlayer.addEventListener('loadedmetadata', () => {
+            videoPlayer.currentTime = nextVideoEndTime;
+            videoPlayer.play();
+        }, { once: true });
+        
+        currentlyPlaying = 'base-video';
         currentVideo.textContent = 'Base loop video';
         originalMessage.textContent = '';
         generatedResponse.textContent = '';

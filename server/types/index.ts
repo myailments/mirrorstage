@@ -1,5 +1,32 @@
 // Core types for the application
 
+// Service type enums
+export enum LLMService {
+  OPENROUTER = 'openrouter',
+  DEEPSEEK = 'deepseek',
+  CLOUDY = 'cloudy',
+  OPENAI = 'openai'
+}
+
+export enum TTSService {
+  ZONOS_LOCAL = 'zonos-local',
+  ZONOS_API = 'zonos-api',
+  ELEVENLABS = 'elevenlabs'
+}
+
+export enum VideoSyncService {
+  LOCAL = 'local',
+  FAL = 'fal',
+  SYNC_LABS = 'sync-labs'
+}
+
+// Selected services configuration
+export interface SelectedServices {
+  llm: LLMService;
+  tts: TTSService;
+  videoSync: VideoSyncService;
+}
+
 // Configuration type
 export interface Config {
   // Server configuration
@@ -7,44 +34,10 @@ export interface Config {
   host: string;
   baseUrl: string;
 
-  // LLM configuration
-  openaiApiKey?: string;
-  useDeepseekLocal?: boolean;
-  deepseekEndpoint?: string;
-  deepseekPort?: number;
-  
-  // OpenRouter configuration
-  useOpenRouter?: boolean;
-  openRouterApiKey?: string;
-  openRouterModel?: string;
-  openRouterSiteUrl?: string;
-  openRouterSiteName?: string;
-  
   // File paths
   baseVideoPath: string;
-  baseAudio?: string;
-  baseAudioPath?: string;
   outputDir: string;
-  
-  // Service flags and configurations
-  useZonosTTSAPI: boolean;
-  zonosApiKey?: string;
-
-  useZonosTTSLocal: boolean;
-  zonosTtsEndpoint: string;
-  latentsyncEndpoint: string;
-
-  zonosTtsPort: number;
-  latentSyncPort: number;
-
-  useElevenLabs: boolean;
-  elevenLabsVoiceId: string;
-  elevenLabsApiKey?: string;
-
-  useCloudyAPI: boolean;
-    
-  useFalLatentSync: boolean;
-  falApiKey?: string;
+  baseAudioPath: string;
 
   // Queue configuration
   minQueueSize: number;
@@ -52,6 +45,56 @@ export interface Config {
   maxConcurrent?: number;
   minPriority?: number;
   checkInterval?: number;
+
+  // Service Selection
+  selectedServices: SelectedServices;
+
+  // LLM Configuration
+  // OpenRouter
+  useOpenRouter: boolean;
+  openRouterApiKey?: string;
+  openRouterModel: string;
+  openRouterSiteUrl?: string;
+  openRouterSiteName?: string;
+
+  // Deepseek
+  useDeepseekLocal: boolean;
+  deepseekEndpoint: string;
+  deepseekPort: number;
+
+  // OpenAI
+  openaiApiKey?: string;
+
+  // CloudyAPI
+  useCloudyAPI: boolean;
+
+  // TTS Configuration
+  // Zonos Local
+  useZonosTTSLocal: boolean;
+  zonosTtsEndpoint: string;
+  zonosTtsPort: number;
+
+  // Zonos API
+  useZonosTTSAPI: boolean;
+  zonosApiKey?: string;
+
+  // ElevenLabs
+  useElevenLabs: boolean;
+  elevenLabsApiKey?: string;
+  elevenLabsVoiceId?: string;
+
+  // Video Sync Configuration
+  // Local LatentSync
+  latentsyncEndpoint: string;
+  latentSyncPort: number;
+
+  // FAL API LatentSync
+  useFalLatentSync: boolean;
+  falApiKey?: string;
+
+  // Sync Labs
+  useSyncLabs: boolean;
+  syncLabsKey?: string;
 
   // Test mode
   testMode?: boolean;
