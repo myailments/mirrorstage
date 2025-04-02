@@ -1,9 +1,22 @@
 // OBS WebSocket service for controlling OBS scenes and sources
 import OBSWebSocket from 'obs-websocket-js';
-import { logger } from '../utils/logger.ts';
+import { logger as loggerService } from '../utils/logger.ts';
+import { MediaStreamService } from '../types/index.ts';
 import { Config } from '../types/index.ts';
 import path from 'path';
 import fs from 'fs';
+
+const logger = {
+  info: (message: string) => {
+    loggerService.info(message, MediaStreamService.OBS);
+  },
+  warn: (message: string) => {
+    loggerService.warn(message, MediaStreamService.OBS);
+  },
+  error: (message: string) => { 
+    loggerService.error(message, MediaStreamService.OBS);
+  }
+}
 
 export class OBSStream {
   private obs: OBSWebSocket;
@@ -82,9 +95,12 @@ export class OBSStream {
           const baseVideoExists = inputList.inputs.some((input: any) => input.inputName === 'Base Video');
           
           if (!baseVideoExists) {
-            logger.warn('Base Video input not found during loop detection');
+            // logger.warn('Base Video input not found during loop detection');
             lastMediaTime = 0; // Reset the media time tracking
+            // Give a 5 second delay
+            await new Promise(resolve => setTimeout(resolve, 5000));
             return; // Skip this cycle
+            
           }
           
           const mediaInfo = await this.obs.call('GetMediaInputStatus', { inputName: 'Base Video' });
@@ -172,7 +188,6 @@ export class OBSStream {
       // Create or switch to a dedicated scene collection
       await this.createSceneCollection();
       
-      // Check if scenes and sources exist, create them if not
       await this.setupScenes();
       
       return true;
@@ -257,7 +272,7 @@ export class OBSStream {
       const baseSceneExists = scenes.some(scene => 
         scene.sceneName === this.config.obsBaseSceneName
       );
-      
+
       if (!baseSceneExists) {
         logger.info(`Creating base scene: ${this.config.obsBaseSceneName}`);
         await this.obs.call('CreateScene', { sceneName: this.config.obsBaseSceneName });
@@ -266,20 +281,7 @@ export class OBSStream {
         const baseVideoPath = path.resolve(this.config.baseVideoPath);
         if (fs.existsSync(baseVideoPath)) {
           logger.info(`Adding base video source to base scene: ${baseVideoPath}`);
-          
-          // Create the media source
-          const response = await this.obs.call('CreateInput', {
-            sceneName: this.config.obsBaseSceneName,
-            inputName: 'Base Video',
-            inputKind: 'ffmpeg_source',
-            inputSettings: {
-              local_file: baseVideoPath,
-              looping: true
-            }
-          });
-          
-          // Center the source in the canvas
-          await this.centerSourceInScene(this.config.obsBaseSceneName, 'Base Video', response.sceneItemId);
+          await this.setupBaseVideoSource(baseVideoPath);
         } else {
           logger.error(`Base video file not found: ${baseVideoPath}`);
         }
@@ -534,6 +536,9 @@ export class OBSStream {
     const uniqueSourceName = `Generated_${Date.now()}_${videoFilename}`;
     
     try {
+      // First clean up any old generated sources
+      await this.cleanupOldGeneratedSources();
+      
       // Make sure generated scene exists
       const scenes = await this.getSceneList();
       const sceneExists = scenes.some(scene => 
@@ -557,6 +562,17 @@ export class OBSStream {
           looping: false
         }
       });
+      
+      // Set up audio monitoring
+      try {
+        await this.obs.call('SetInputAudioMonitorType', {
+          inputName: uniqueSourceName,
+          monitorType: 'OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT'
+        });
+        logger.info(`Enabled audio monitoring for: ${uniqueSourceName}`);
+      } catch (error) {
+        logger.warn(`Failed to set audio monitoring: ${error instanceof Error ? error.message : String(error)}`);
+      }
       
       // If we got a valid response with sceneItemId, center the source
       if (response && response.sceneItemId) {
@@ -582,23 +598,26 @@ export class OBSStream {
             logger.info(`Video duration: ${endTime}s`);
           } catch (error) {
             logger.error(`Failed to get generated video duration: ${error instanceof Error ? error.message : String(error)}`);
-            // Continue with default time 0
           }
           
           // Switch back to base scene
           const success = await this.switchToBaseScene();
           
           if (success) {
+            // Clean up the source immediately after switching scenes
+            try {
+              await this.obs.call('RemoveInput', { inputName: uniqueSourceName });
+              logger.info(`Removed completed media source: ${uniqueSourceName}`);
+            } catch (error) {
+              logger.error(`Failed to remove source: ${error instanceof Error ? error.message : String(error)}`);
+            }
+            
             // Set the base video time to continue from where the generated video ended
             try {
-              // Give a moment for scene switch to complete
               setTimeout(async () => {
-                // We'll try a more robust approach to seeking
-                // First, ensure we're getting the media input properties to verify it exists
                 try {
                   const mediaInfo = await this.obs.call('GetMediaInputStatus', { inputName: 'Base Video' });
                   logger.info(`Current base video state: ${JSON.stringify(mediaInfo)}`);
-                  
                   
                   await this.obs.call('SetInputSettings', {
                     inputName: 'Base Video',
@@ -608,15 +627,11 @@ export class OBSStream {
                   });
                   logger.info(`Set base video cursor_position to ${endTime}s`);
                   
-                  // Allow time for position to be set (increased from 100ms to 500ms)
-                  
-                  // Step 3: Play the video from the new position
                   await this.obs.call('TriggerMediaInputAction', {
                     inputName: 'Base Video',
                     mediaAction: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PLAY'
                   });
                   logger.info(`Restarted base video at position ${endTime}s`);
-    
                   
                 } catch (seekError) {
                   logger.error(`Failed to set video position: ${seekError instanceof Error ? seekError.message : String(seekError)}`);
@@ -630,7 +645,7 @@ export class OBSStream {
                 if (this.pendingVideoQueue.length > 0) {
                   logger.info(`${this.pendingVideoQueue.length} videos still pending in queue`);
                 }
-              }, 1000); // Longer delay to ensure scene switch is complete
+              }, 1000);
             } catch (error) {
               logger.error(`Failed during scene transition: ${error instanceof Error ? error.message : String(error)}`);
               this.isTransitioning = false;
@@ -639,16 +654,6 @@ export class OBSStream {
             logger.error(`Scene switch failed, releasing transition lock`);
             this.isTransitioning = false;
           }
-          
-          // Clean up by removing this source
-          setTimeout(async () => {
-            try {
-              await this.obs.call('RemoveInput', { inputName: uniqueSourceName });
-              logger.info(`Removed completed media source: ${uniqueSourceName}`);
-            } catch (error) {
-              logger.error(`Failed to remove source: ${error instanceof Error ? error.message : String(error)}`);
-            }
-          }, 2000); // Longer delay to ensure removal happens after everything else
           
           // Remove this specific event listener
           this.obs.off('MediaInputPlaybackEnded', mediaEndHandler);
@@ -665,6 +670,13 @@ export class OBSStream {
           logger.info(`Successfully switched to generated scene and now playing video: ${videoPath}`);
         } else {
           logger.error(`Failed to switch to generated scene, but media source was created`);
+          // Clean up the source if we failed to switch scenes
+          try {
+            await this.obs.call('RemoveInput', { inputName: uniqueSourceName });
+            logger.info(`Cleaned up media source after failed scene switch: ${uniqueSourceName}`);
+          } catch (error) {
+            logger.error(`Failed to clean up source: ${error instanceof Error ? error.message : String(error)}`);
+          }
           this.isTransitioning = false;
         }
       }, 500);
@@ -672,6 +684,31 @@ export class OBSStream {
     } catch (error) {
       logger.error(`Failed to process generated video: ${error instanceof Error ? error.message : String(error)}`);
       this.isTransitioning = false;
+    }
+  }
+  
+  /**
+   * Clean up any old generated sources that might be left over
+   */
+  private async cleanupOldGeneratedSources(): Promise<void> {
+    try {
+      // Get all inputs
+      const inputList = await this.obs.call('GetInputList');
+      
+      // Find and remove any sources that start with 'Generated_'
+      for (const input of inputList.inputs) {
+        const inputName = input.inputName;
+        if (typeof inputName === 'string' && inputName.startsWith('Generated_')) {
+          try {
+            await this.obs.call('RemoveInput', { inputName });
+            logger.info(`Cleaned up old generated source: ${inputName}`);
+          } catch (error) {
+            logger.warn(`Failed to remove old source ${inputName}: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
+      }
+    } catch (error) {
+      logger.error(`Failed to clean up old sources: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
   
@@ -741,6 +778,36 @@ export class OBSStream {
       } catch (altError) {
         logger.error(`Failed alternative centering: ${altError instanceof Error ? altError.message : String(altError)}`);
       }
+    }
+  }
+
+  /**
+   * Set up base video source with proper audio monitoring
+   */
+  private async setupBaseVideoSource(baseVideoPath: string): Promise<void> {
+    try {
+      const response = await this.obs.call('CreateInput', {
+        sceneName: this.config.obsBaseSceneName,
+        inputName: 'Base Video',
+        inputKind: 'ffmpeg_source',
+        inputSettings: {
+          local_file: baseVideoPath,
+          looping: true
+        }
+      });
+
+      // Set up audio monitoring for base video
+      await this.obs.call('SetInputAudioMonitorType', {
+        inputName: 'Base Video',
+        monitorType: 'OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT'
+      });
+      logger.info('Enabled audio monitoring for base video');
+
+      if (response.sceneItemId) {
+        await this.centerSourceInScene(this.config.obsBaseSceneName, 'Base Video', response.sceneItemId);
+      }
+    } catch (error) {
+      logger.error(`Failed to setup base video source: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 }

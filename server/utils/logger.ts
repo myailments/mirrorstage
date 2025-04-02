@@ -2,10 +2,12 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-
+import { LLMService, TTSService, VideoSyncService, MediaStreamService } from '../types';
 // Get __dirname equivalent in ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+type ServiceName = LLMService | TTSService | VideoSyncService | MediaStreamService;
 
 // ANSI Colors
 const colors = {
@@ -31,7 +33,7 @@ const logFile = path.join(logsDir, 'app.log');
 type LogLevel = 'INFO' | 'WARN' | 'ERROR';
 type LogMessage = string | object;
 
-function log(level: LogLevel, message: LogMessage): void {
+function log(level: LogLevel, message: LogMessage, serviceName?: ServiceName): void {
   const timestamp = new Date().toISOString();
   
   // Plain message for file
@@ -56,16 +58,19 @@ function log(level: LogLevel, message: LogMessage): void {
       emoji = 'ℹ️';
   }
 
+  // Add service name if provided
+  const serviceLabel = serviceName ? `[${serviceName}]` : '';
+
   // Special formatting for queue status
   if (typeof message === 'string' && message.includes('Queue Status:')) {
-    console.log(`${colors.dim}[${timestamp}]${colors.reset} ${consoleColor}[${level}]${colors.reset} ${emoji}`);
+    console.log(`${colors.dim}[${timestamp}]${colors.reset} ${consoleColor}[${level}]${colors.reset} ${emoji} ${colors.dim}${serviceLabel}${colors.reset}`);
     console.log(`${colors.magenta}${message}${colors.reset}`);
   } else {
     // Format objects if needed
     const displayMessage = typeof message === 'object' 
       ? JSON.stringify(message, null, 2)
       : message;
-    console.log(`${colors.dim}[${timestamp}]${colors.reset} ${consoleColor}[${level}]${colors.reset} ${emoji} ${displayMessage}`);
+    console.log(`${colors.dim}[${timestamp}]${colors.reset} ${colors.blue}${serviceLabel}${colors.reset} ${consoleColor}[${level}]${colors.reset} ${emoji} ${displayMessage}`);
   }
   
   // Log to file (without colors)
@@ -73,7 +78,7 @@ function log(level: LogLevel, message: LogMessage): void {
 }
 
 export const logger = {
-  info: (message: LogMessage): void => log('INFO', message),
-  warn: (message: LogMessage): void => log('WARN', message),
-  error: (message: LogMessage): void => log('ERROR', message),
+  info: (message: LogMessage, serviceName?: ServiceName): void => log('INFO', message, serviceName),
+  warn: (message: LogMessage, serviceName?: ServiceName): void => log('WARN', message, serviceName),
+  error: (message: LogMessage, serviceName?: ServiceName): void => log('ERROR', message, serviceName),
 };
