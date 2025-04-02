@@ -72,8 +72,6 @@ export class OBSStream {
     let lastMediaTime = 0;
     
     // For base video, the key is to detect when it loops (time goes from high to low)
-    // Continuously track the media position to detect loop points
-    let consecutiveLoopChecks = 0;  // For more reliable loop detection
     let loopDetectionThreshold = 5; // Time jump must be larger than this to count as a loop
     
     setInterval(async () => {
@@ -107,37 +105,13 @@ export class OBSStream {
               currentMediaTime < lastMediaTime - loopDetectionThreshold && 
               this.pendingVideoQueue.length > 0 && !this.isTransitioning) {
             
-            // To avoid false positives, count consecutive detections
-            consecutiveLoopChecks++;
             
             // Log only on the first detection to avoid log spam
-            if (consecutiveLoopChecks === 1) {
               logger.info(`Potential loop detected! Base video time jumped from ${lastMediaTime.toFixed(2)}s to ${currentMediaTime.toFixed(2)}s`);
               await this.playNextPendingVideo();
-
-            }
-            
-            // Only trigger transition after multiple consecutive detections
-            if (consecutiveLoopChecks >= 2) {
-              logger.info(`Loop confirmed! Base video restarted from ${lastMediaTime.toFixed(2)}s to ${currentMediaTime.toFixed(2)}s`);
-              logger.info('Base video loop completed, transitioning to generated video');
-              await this.playNextPendingVideo();
-              consecutiveLoopChecks = 0; // Reset counter
-            }
-          } else {
-            consecutiveLoopChecks = 0; // Reset if no jump detected
-          }
           
-          // Special case: also check if we're near the end of the video and almost looping
-          if (isPlaying && this.baseVideoDuration > 0 && 
-              lastMediaTime > 0 && 
-              this.baseVideoDuration - lastMediaTime < 0.5 && 
-              currentMediaTime < 0.5 && 
-              this.pendingVideoQueue.length > 0 && !this.isTransitioning) {
-            logger.info(`End-of-video detection: Base video transitioning from ${lastMediaTime.toFixed(2)}s to ${currentMediaTime.toFixed(2)}s (duration: ${this.baseVideoDuration.toFixed(2)}s)`);
-            logger.info('Base video near loop point, transitioning to generated video');
-            await this.playNextPendingVideo();
           }
+
           
           lastMediaTime = currentMediaTime;
         } catch (error) {
@@ -149,7 +123,6 @@ export class OBSStream {
       } else {
         // Reset time tracking when we're not on the base scene
         lastMediaTime = 0;
-        consecutiveLoopChecks = 0;
       }
     }, 100); // Check more frequently (reduced from 500ms to 200ms)
     
