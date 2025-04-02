@@ -20,11 +20,17 @@ export enum VideoSyncService {
   SYNC_LABS = 'sync-labs'
 }
 
+export enum MediaStreamService {
+  CLIENT = 'client',
+  OBS = 'obs'
+}
+
 // Selected services configuration
 export interface SelectedServices {
   llm: LLMService;
   tts: TTSService;
   videoSync: VideoSyncService;
+  mediaStream: MediaStreamService;
 }
 
 // Configuration type
@@ -95,6 +101,16 @@ export interface Config {
   // Sync Labs
   useSyncLabs: boolean;
   syncLabsKey?: string;
+
+  // Media Stream Configuration
+  // OBS WebSocket
+  useOBS: boolean;
+  obsWebSocketHost: string;
+  obsWebSocketPort: number;
+  obsWebSocketPassword?: string;
+  obsBaseSceneName: string;
+  obsGeneratedSceneName: string;
+  obsGeneratedSourceName: string;
 
   // Test mode
   testMode?: boolean;

@@ -33,12 +33,14 @@ class AIPipeline {
   textGenerator: any;
   tts: any;
   sync: any;
+  obsStream: any;
 
   static Status = PipelineStatus;
 
   constructor() {
     this.config = {
       ...config,
+      testMode: true,
       maxConcurrent: Math.min(config.maxConcurrent || 4, 20)
     };
     this.pipeline = new Map<string, PipelineItem>(); 
@@ -57,6 +59,7 @@ class AIPipeline {
     this.textGenerator = services.textGenerator;
     this.tts = services.tts;
     this.sync = services.sync;
+    this.obsStream = services.obsStream;
 
     return true;
   }
@@ -151,6 +154,16 @@ class AIPipeline {
       item.videoPath = videoPath;
       logger.info(`Generated video at: ${videoPath}`);
       
+      // Send video to OBS if configured
+      if (this.obsStream && this.config.useOBS) {
+        try {
+          await this.obsStream.updateGeneratedVideoSource(videoPath);
+          logger.info(`Video sent to OBS: ${videoPath}`);
+        } catch (obsError) {
+          logger.error(`Failed to send video to OBS: ${obsError instanceof Error ? obsError.message : String(obsError)}`);
+          // Continue with normal web client pipeline even if OBS fails
+        }
+      }
 
       // Mark as completed
       this.updateStatus(item, PipelineStatus.COMPLETED);
@@ -303,7 +316,22 @@ if (process.argv.includes('--cli')) {
       
       // Start server
       const PORT = process.env.PORT || 3000;
-      app.listen(PORT, () => logger.info(`Server running on port ${PORT}`));
+      const server = app.listen(PORT, () => logger.info(`Server running on port ${PORT}`));
+      
+      // Handle graceful shutdown
+      process.on('SIGINT', async () => {
+        logger.info('Shutting down server...');
+        
+        // Disconnect from OBS if connected
+        if (pipeline.obsStream) {
+          await pipeline.obsStream.disconnect();
+        }
+        
+        server.close(() => {
+          logger.info('Server stopped');
+          process.exit(0);
+        });
+      });
     } catch (error) {
       logger.error(`Failed to initialize pipeline: ${error instanceof Error ? error.message : String(error)}`);
       process.exit(1);

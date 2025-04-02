@@ -4,8 +4,10 @@ import { MessageEvaluator, TestMessageEvaluator } from './Evaluator.js';
 import { ZonosTTS, ElevenLabsTTS, ZonosTTSAPI, TestTTS } from './TTS.js';
 import { LocalLatentSync, FalLatentSync, TestVideoSync, SyncLabsSync } from './VideoSync.js';
 import { TestTextGenerator, TextGenerator } from './TextGenerator.js';
+import { OBSStream } from './OBSStream.js';
 import type { Config } from '../types/index.js';
 import { TTSService, VideoSyncService } from './interfaces.js';
+import { MediaStreamService } from '../types/index.js';
 
 export interface PipelineServices {
   fileManager: FileManager;
@@ -13,6 +15,7 @@ export interface PipelineServices {
   textGenerator: TextGenerator;
   tts: TTSService;
   sync: VideoSyncService;
+  obsStream?: OBSStream;
 }
 
 export class PipelineInitializer {
@@ -59,7 +62,14 @@ export class PipelineInitializer {
           this.config.useSyncLabs ?
           new SyncLabsSync(this.config) :
           new LocalLatentSync(this.config)
-      };``
+      };
+      
+      // Initialize OBS streaming service if enabled
+      if (this.config.selectedServices.mediaStream === MediaStreamService.OBS) {
+        services.obsStream = new OBSStream(this.config);
+        // Connect to OBS WebSocket
+        await services.obsStream.connect();
+      }
 
 
       // Test service connections
@@ -100,6 +110,19 @@ export class PipelineInitializer {
       logger.info('Video sync service connection verified');
     } catch (error) {
       logger.warn(`Video sync service connection warning: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    
+    // Test OBS connection if configured
+    if (services.obsStream) {
+      try {
+        if (services.obsStream.isConnected()) {
+          logger.info('OBS WebSocket connection verified');
+        } else {
+          logger.warn('OBS WebSocket connection not established');
+        }
+      } catch (error) {
+        logger.warn(`OBS WebSocket connection warning: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
   }
 }

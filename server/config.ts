@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { Config } from './types/index.js';
-import { LLMService, TTSService, VideoSyncService } from './types/index.js';
+import { LLMService, TTSService, VideoSyncService, MediaStreamService } from './types/index.js';
 
 // Get the directory name of the current module
 const __filename = fileURLToPath(import.meta.url);
@@ -33,10 +33,16 @@ const getVideoSyncService = (): VideoSyncService => {
   return VideoSyncService.LOCAL; // default
 };
 
+const getMediaStreamService = (): MediaStreamService => {
+  if (process.env.USE_OBS === 'true') return MediaStreamService.OBS;
+  return MediaStreamService.CLIENT; // default
+};
+
 const selectedServices = {
   llm: getLLMService(),
   tts: getTTSService(),
-  videoSync: getVideoSyncService()
+  videoSync: getVideoSyncService(),
+  mediaStream: getMediaStreamService()
 };
 
 const config: Config = {
@@ -49,35 +55,6 @@ const config: Config = {
   baseVideoPath: process.env.BASE_VIDEO_PATH || './assets/base_video.mp4',
   outputDir: process.env.OUTPUT_DIR || './generated_videos',
   baseAudioPath: process.env.BASE_AUDIO_PATH || './assets/base_audio.wav',
-<<<<<<< HEAD
-=======
-  
-  // Models
-  useZonosTTSAPI: process.env.USE_ZONOS_TTS_API === 'true',
-  zonosApiKey: process.env.ZONOS_API_KEY,
-
-  useZonosTTSLocal: process.env.USE_ZONOS_TTS_LOCAL === 'true',
-  zonosTtsEndpoint: process.env.ZONOS_TTS_ENDPOINT || '/tts',
-  latentsyncEndpoint: process.env.LATENTSYNC_ENDPOINT || '/sync',
-
-  // MuseTalk configuration
-  // useMuseTalk: process.env.USE_MUSE_TALK === 'true',
-  useMuseTalk: true,
-  museTalkEndpoint: process.env.MUSE_TALK_ENDPOINT || '/sync',
-  museTalkPort: Number(process.env.MUSE_TALK_PORT) || 8080,
-
-  zonosTtsPort: Number(process.env.ZONOS_TTS_PORT) || 8001,
-  latentSyncPort: Number(process.env.LATENTSYNC_PORT) || 8002,
-
-  useElevenLabs: false,
-  elevenLabsVoiceId: '4ktOZjIcYueSlqN5UZjv',
-  elevenLabsApiKey: process.env.ELEVENLABS_API_KEY,
-
-  useCloudyAPI: false,
-    
-  useFalLatentSync: false,
-  falApiKey: process.env.FAL_KEY,
->>>>>>> 1de14b63619ec75aa2275aa37e65c2a68b94eed5
 
   // Queue configuration
   minQueueSize: parseInt(process.env.MIN_QUEUE_SIZE || '3', 10),
@@ -129,6 +106,15 @@ const config: Config = {
   // Sync Labs
   useSyncLabs: selectedServices.videoSync === VideoSyncService.SYNC_LABS,
   syncLabsKey: process.env.SYNC_LABS_KEY,
+
+  // OBS WebSocket configuration
+  useOBS: selectedServices.mediaStream === MediaStreamService.OBS,
+  obsWebSocketHost: process.env.OBS_WEBSOCKET_HOST || 'localhost',
+  obsWebSocketPort: Number(process.env.OBS_WEBSOCKET_PORT) || 4455,
+  obsWebSocketPassword: process.env.OBS_WEBSOCKET_PASSWORD,
+  obsBaseSceneName: process.env.OBS_BASE_SCENE || 'Base Scene',
+  obsGeneratedSceneName: process.env.OBS_GENERATED_SCENE || 'Generated Scene',
+  obsGeneratedSourceName: process.env.OBS_GENERATED_SOURCE || 'Generated Video',
 
   // Add selected services for reference
   selectedServices,
