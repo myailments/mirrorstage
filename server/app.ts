@@ -40,7 +40,7 @@ class AIPipeline {
   constructor() {
     this.config = {
       ...config,
-      testMode: true,
+      testMode: false,
       maxConcurrent: Math.min(config.maxConcurrent || 4, 20)
     };
     this.pipeline = new Map<string, PipelineItem>(); 
@@ -128,9 +128,8 @@ class AIPipeline {
       // Evaluate
       this.updateStatus(item, PipelineStatus.EVALUATING);
       const evaluation = await this.evaluator.evaluateInputs([item]);
-      const evaluated = evaluation[0];
 
-      if (evaluated.priority < this.config.minPriority!) {
+      if (evaluation.priority < this.config.minPriority!) {
         this.updateStatus(item, PipelineStatus.REJECTED);
         return;
       }

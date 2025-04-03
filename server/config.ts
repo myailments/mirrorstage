@@ -15,7 +15,6 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 // Service selection logic
 const getLLMService = (): LLMService => {
   if (process.env.USE_OPENROUTER === 'true') return LLMService.OPENROUTER;
-  if (process.env.USE_DEEPSEEK_LOCAL === 'true') return LLMService.DEEPSEEK;
   if (process.env.USE_CLOUDY_API === 'true') return LLMService.CLOUDY;
   return LLMService.OPENAI; // default
 };
@@ -64,15 +63,10 @@ const config: Config = {
   // OpenRouter
   useOpenRouter: selectedServices.llm === LLMService.OPENROUTER,
   openRouterApiKey: process.env.OPENROUTER_API_KEY,
-  openRouterModel: process.env.OPENROUTER_MODEL || 'deepseek/deepseek-chat-v3-0324:free',
+  openRouterGenerationModel: process.env.OPENROUTER_GENERATION_MODEL || 'deepseek/deepseek-chat-v3-0324:free',
+  openRouterEvaluationModel: process.env.OPENROUTER_EVALUATION_MODEL || 'openai/gpt-4o-mini',
   openRouterSiteUrl: process.env.OPENROUTER_SITE_URL,
   openRouterSiteName: process.env.OPENROUTER_SITE_NAME,
-
-  // Deepseek Local
-  useDeepseekLocal: selectedServices.llm === LLMService.DEEPSEEK,
-  deepseekEndpoint: process.env.DEEPSEEK_ENDPOINT || '/v1',
-  deepseekPort: Number(process.env.DEEPSEEK_PORT) || 8000,
-
   // OpenAI
   openaiApiKey: process.env.OPENAI_API_KEY,
 

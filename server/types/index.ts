@@ -3,7 +3,6 @@
 // Service type enums
 export enum LLMService {
   OPENROUTER = 'openrouter',
-  DEEPSEEK = 'deepseek',
   CLOUDY = 'cloudy',
   OPENAI = 'openai'
 }
@@ -59,14 +58,11 @@ export interface Config {
   // OpenRouter
   useOpenRouter: boolean;
   openRouterApiKey?: string;
-  openRouterModel: string;
+  openRouterGenerationModel?: string;
+  openRouterEvaluationModel?: string;
   openRouterSiteUrl?: string;
   openRouterSiteName?: string;
 
-  // Deepseek
-  useDeepseekLocal: boolean;
-  deepseekEndpoint: string;
-  deepseekPort: number;
 
   // OpenAI
   openaiApiKey?: string;
