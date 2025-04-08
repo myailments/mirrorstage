@@ -358,8 +358,9 @@ export class OBSStream {
       
       // If we got a valid response with sceneItemId, center the source
       if (response && response.sceneItemId) {
-        logger.info(`Centering source in scene with sceneItemId: ${response.sceneItemId}`);
-        await this.centerSourceInScene(this.singleSceneName, uniqueSourceName, response.sceneItemId);
+        logger.info(`Setting up source in scene with sceneItemId: ${response.sceneItemId}`);
+        // Copy filters and properties from base source to new source
+        await this.copyFiltersAndProperties(this.baseSourceName, uniqueSourceName);
         
         // Store the active generated source name
         this.activeGeneratedSource = uniqueSourceName;
@@ -492,75 +493,6 @@ export class OBSStream {
   }
   
   /**
-   * Center a source in the scene and fit it to canvas size
-   */
-  private async centerSourceInScene(sceneName: string, sourceName: string, sceneItemId: number): Promise<void> {
-    try {
-      // First, get the canvas size from OBS
-      const videoSettings = await this.obs.call('GetVideoSettings');
-      const canvasWidth = videoSettings.baseWidth;
-      const canvasHeight = videoSettings.baseHeight;
-      
-      logger.info(`OBS canvas size: ${canvasWidth}x${canvasHeight}`);
-      
-      // Get source's native size
-      const sceneItemTransform = await this.obs.call('GetSceneItemTransform', {
-        sceneName: sceneName,
-        sceneItemId: sceneItemId
-      });
-      
-      // Create centered transform that fills the canvas while maintaining aspect ratio
-      await this.obs.call('SetSceneItemTransform', {
-        sceneName: sceneName,
-        sceneItemId: sceneItemId,
-        sceneItemTransform: {
-          // Reset position to center
-          positionX: 0,
-          positionY: 0,
-          // Maintain aspect ratio
-          boundsType: 'OBS_BOUNDS_SCALE_INNER',
-          boundsWidth: canvasWidth,
-          boundsHeight: canvasHeight,
-          // Center alignment
-          alignment: 5, // 5 is center (0-8, 0 is top-left, 8 is bottom-right)
-          // Set bounds to match canvas
-          bounds: {
-            type: 'OBS_BOUNDS_SCALE_INNER',
-            x: canvasWidth,
-            y: canvasHeight
-          }
-        }
-      });
-      
-      logger.info(`Centered source "${sourceName}" in scene "${sceneName}"`);
-    } catch (error) {
-      logger.warn(`Failed to center source: ${error instanceof Error ? error.message : String(error)}`);
-      
-      // Try alternative approach if the first one fails
-      try {
-        // Set alignment to center and scale to fit the canvas
-        await this.obs.call('SetSceneItemTransform', {
-          sceneName: sceneName,
-          sceneItemId: sceneItemId,
-          sceneItemTransform: {
-            alignment: 5, // Center
-            positionX: 0,
-            positionY: 0,
-            scale: {
-              x: 1.0,
-              y: 1.0
-            }
-          }
-        });
-        
-        logger.info(`Used alternative method to center "${sourceName}" in scene "${sceneName}"`);
-      } catch (altError) {
-        logger.error(`Failed alternative centering: ${altError instanceof Error ? altError.message : String(altError)}`);
-      }
-    }
-  }
-
-  /**
    * Set up base video source with proper audio monitoring
    */
   private async setupBaseVideoSource(baseVideoPath: string): Promise<void> {
@@ -583,10 +515,166 @@ export class OBSStream {
       logger.info('Enabled audio monitoring for base video');
 
       if (response.sceneItemId) {
-        await this.centerSourceInScene(this.singleSceneName, this.baseSourceName, response.sceneItemId);
+        // Set up initial transform for base video to center it in the scene
+        try {
+          // Get the canvas size from OBS
+          const videoSettings = await this.obs.call('GetVideoSettings');
+          const canvasWidth = videoSettings.baseWidth;
+          const canvasHeight = videoSettings.baseHeight;
+          
+          logger.info(`OBS canvas size: ${canvasWidth}x${canvasHeight}`);
+          
+          // Create centered transform that fills the canvas while maintaining aspect ratio
+          await this.obs.call('SetSceneItemTransform', {
+            sceneName: this.singleSceneName,
+            sceneItemId: response.sceneItemId,
+            sceneItemTransform: {
+              // Reset position to center
+              positionX: 0,
+              positionY: 0,
+              // Maintain aspect ratio
+              boundsType: 'OBS_BOUNDS_SCALE_INNER',
+              boundsWidth: canvasWidth,
+              boundsHeight: canvasHeight,
+              // Center alignment
+              alignment: 5, // 5 is center (0-8, 0 is top-left, 8 is bottom-right)
+              // Set bounds to match canvas
+              bounds: {
+                type: 'OBS_BOUNDS_SCALE_INNER',
+                x: canvasWidth,
+                y: canvasHeight
+              }
+            }
+          });
+          logger.info(`Set up initial transform for base video source`);
+        } catch (error) {
+          logger.warn(`Failed to set up initial transform: ${error instanceof Error ? error.message : String(error)}`);
+        }
       }
     } catch (error) {
       logger.error(`Failed to setup base video source: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Copy filters and transform properties from one source to another
+   * This ensures visual consistency between the base video and generated videos
+   */
+  private async copyFiltersAndProperties(fromSourceName: string, toSourceName: string): Promise<void> {
+    try {
+      // Get filters from base source
+      const filtersResult = await this.obs.call('GetSourceFilterList', {
+        sourceName: fromSourceName
+      });
+      
+      // Get scene items for both sources
+      const sourcesList = await this.obs.call('GetSceneItemList', {
+        sceneName: this.singleSceneName
+      });
+      
+      const fromSourceItem = sourcesList.sceneItems.find(item => 
+        item.sourceName === fromSourceName
+      );
+      
+      const toSourceItem = sourcesList.sceneItems.find(item => 
+        item.sourceName === toSourceName
+      );
+      
+      if (!fromSourceItem || !toSourceItem) {
+        logger.warn(`Could not find source items to copy properties`);
+        return;
+      }
+      
+      // Copy transform properties (position, size, crop, etc.)
+      if (fromSourceItem.sceneItemId && toSourceItem.sceneItemId) {
+        try {
+          // Get the transform of the base source
+          const sourceTransform = await this.obs.call('GetSceneItemTransform', {
+            sceneName: this.singleSceneName,
+            sceneItemId: Number(fromSourceItem.sceneItemId)
+          });
+          
+          // Apply same transform to the generated source
+          await this.obs.call('SetSceneItemTransform', {
+            sceneName: this.singleSceneName,
+            sceneItemId: Number(toSourceItem.sceneItemId),
+            sceneItemTransform: sourceTransform.sceneItemTransform
+          });
+          logger.info(`Copied transform properties from ${fromSourceName} to ${toSourceName}`);
+        } catch (transformError) {
+          logger.warn(`Failed to copy transform: ${transformError instanceof Error ? transformError.message : String(transformError)}`);
+          
+          // Fallback to a basic centered transform if copying fails
+          try {
+            // Get the canvas size from OBS
+            const videoSettings = await this.obs.call('GetVideoSettings');
+            const canvasWidth = videoSettings.baseWidth || 1920;
+            const canvasHeight = videoSettings.baseHeight || 1080;
+            
+            await this.obs.call('SetSceneItemTransform', {
+              sceneName: this.singleSceneName,
+              sceneItemId: Number(toSourceItem.sceneItemId),
+              sceneItemTransform: {
+                positionX: 0,
+                positionY: 0,
+                alignment: 5, // Center
+                boundsType: 'OBS_BOUNDS_SCALE_INNER',
+                boundsWidth: canvasWidth,
+                boundsHeight: canvasHeight
+              }
+            });
+            logger.info(`Applied fallback centered transform to ${toSourceName}`);
+          } catch (fallbackError) {
+            logger.error(`Failed to apply fallback transform: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`);
+          }
+        }
+      }
+      
+      // Copy filters from base source to generated source
+      if (filtersResult && filtersResult.filters && Array.isArray(filtersResult.filters)) {
+        let copiedFilterCount = 0;
+        
+        for (const filter of filtersResult.filters) {
+          // Skip if filter properties are not valid
+          if (!filter.filterName || !filter.filterKind) {
+            continue;
+          }
+          
+          const filterName = String(filter.filterName);
+          const filterKind = String(filter.filterKind);
+          
+          try {
+            // Get specific filter settings
+            const filterSettings = await this.obs.call('GetSourceFilter', {
+              sourceName: fromSourceName,
+              filterName: filterName
+            });
+            
+            // Create the same filter on the generated source
+            await this.obs.call('CreateSourceFilter', {
+              sourceName: toSourceName,
+              filterName: filterName,
+              filterKind: filterKind,
+              filterSettings: filterSettings.filterSettings || {}
+            });
+            
+            // Set same filter enabled state (default to true if not specified)
+            await this.obs.call('SetSourceFilterEnabled', {
+              sourceName: toSourceName,
+              filterName: filterName,
+              filterEnabled: Boolean(filter.filterEnabled)
+            });
+            
+            copiedFilterCount++;
+          } catch (filterError) {
+            logger.warn(`Failed to copy filter ${filterName}: ${filterError instanceof Error ? filterError.message : String(filterError)}`);
+          }
+        }
+        
+        logger.info(`Copied ${copiedFilterCount} filters from ${fromSourceName} to ${toSourceName}`);
+      }
+    } catch (error) {
+      logger.warn(`Failed to copy properties: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
