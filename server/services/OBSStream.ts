@@ -25,11 +25,16 @@ export class OBSStream {
   private currentScene: string;
   private pendingVideoQueue: string[] = [];
   private isTransitioning: boolean = false;
+  
+  // New properties for single scene approach
+  private singleSceneName: string = 'AI_Stream_Scene';
+  private baseSourceName: string = 'Base_Video';
+  private activeGeneratedSource: string | null = null;
 
   constructor(config: Config) {
     this.config = config;
     this.obs = new OBSWebSocket();
-    this.currentScene = this.config.obsBaseSceneName;
+    this.currentScene = this.singleSceneName;
     
     // Set up event handlers
     this.obs.on('ConnectionOpened', () => {
@@ -183,46 +188,38 @@ export class OBSStream {
   private async setupScenes(): Promise<void> {
     try {
       // Log to help debug OBS connection details
-      logger.info(`Setting up OBS scenes with base video: ${this.config.baseVideoPath}`);
+      logger.info(`Setting up single scene with base video: ${this.config.baseVideoPath}`);
       
       // Get list of scenes
       const scenes = await this.getSceneList();
       logger.info(`Found ${scenes.length} existing scenes in OBS`);
       
-      // Check if base scene exists
-      const baseSceneExists = scenes.some(scene => 
-        scene.sceneName === this.config.obsBaseSceneName
+      // Check if our single scene exists
+      const sceneExists = scenes.some(scene => 
+        scene.sceneName === this.singleSceneName
       );
 
-      if (!baseSceneExists) {
-        logger.info(`Creating base scene: ${this.config.obsBaseSceneName}`);
-        await this.obs.call('CreateScene', { sceneName: this.config.obsBaseSceneName });
+      if (!sceneExists) {
+        logger.info(`Creating single scene: ${this.singleSceneName}`);
+        await this.obs.call('CreateScene', { sceneName: this.singleSceneName });
         
-        // Add base video source to base scene
+        // Add base video source to the scene
         const baseVideoPath = path.resolve(this.config.baseVideoPath);
         if (fs.existsSync(baseVideoPath)) {
-          logger.info(`Adding base video source to base scene: ${baseVideoPath}`);
+          logger.info(`Adding base video source to scene: ${baseVideoPath}`);
           await this.setupBaseVideoSource(baseVideoPath);
         } else {
           logger.error(`Base video file not found: ${baseVideoPath}`);
         }
       }
       
-      // Get updated scene list
-      const updatedScenes = await this.getSceneList();
+      // Switch to our single scene
+      await this.obs.call('SetCurrentProgramScene', { 
+        sceneName: this.singleSceneName 
+      });
       
-      // Check if generated scene exists
-      const generatedSceneExists = updatedScenes.some(scene => 
-        scene.sceneName === this.config.obsGeneratedSceneName
-      );
-      
-      if (!generatedSceneExists) {
-        logger.info(`Creating generated scene: ${this.config.obsGeneratedSceneName}`);
-        await this.obs.call('CreateScene', { sceneName: this.config.obsGeneratedSceneName });
-      }
-      
-      // Switch to base scene
-      await this.switchToBaseScene();
+      this.currentScene = this.singleSceneName;
+      logger.info(`Successfully switched to scene: ${this.singleSceneName}`);
       
     } catch (error) {
       logger.error(`Failed to setup OBS scenes: ${error instanceof Error ? error.message : String(error)}`);
@@ -243,7 +240,7 @@ export class OBSStream {
   }
   
   /**
-   * Update the media source in the generated scene with the new video file
+   * Update the media source with a new video file
    */
   async updateGeneratedVideoSource(videoPath: string): Promise<boolean> {
     if (!this.connected) {
@@ -266,7 +263,7 @@ export class OBSStream {
       
       // Process immediately if not transitioning
       if (!this.isTransitioning && this.pendingVideoQueue.length === 1) {
-        await this.playNextPendingVideo();
+        await this.playNextVideoInSingleScene();
       } else {
         // Log queue status
         if (this.isTransitioning) {
@@ -279,102 +276,6 @@ export class OBSStream {
       return true;
     } catch (error) {
       logger.error(`Failed to queue video: ${error instanceof Error ? error.message : String(error)}`);
-      return false;
-    }
-  }
-  
-  /**
-   * Switch to the base scene
-   */
-  async switchToBaseScene(): Promise<boolean> {
-    if (!this.connected) {
-      logger.warn('OBS WebSocket not connected, cannot switch scenes');
-      return false;
-    }
-    
-    logger.info(`Attempting to switch to base scene: ${this.config.obsBaseSceneName}`);
-    
-    try {
-      // Check if scene exists first
-      const scenes = await this.getSceneList();
-      const sceneExists = scenes.some(scene => 
-        scene.sceneName === this.config.obsBaseSceneName
-      );
-      
-      if (!sceneExists) {
-        logger.error(`Base scene ${this.config.obsBaseSceneName} does not exist in OBS!`);
-        
-        // Try to recreate the scene as a recovery mechanism
-        logger.info(`Attempting to recreate base scene`);
-        await this.obs.call('CreateScene', { sceneName: this.config.obsBaseSceneName });
-        
-        // Add base video source to base scene
-        const baseVideoPath = path.resolve(this.config.baseVideoPath);
-        if (fs.existsSync(baseVideoPath)) {
-          await this.obs.call('CreateInput', {
-            sceneName: this.config.obsBaseSceneName,
-            inputName: 'Base Video',
-            inputKind: 'ffmpeg_source',
-            inputSettings: {
-              local_file: baseVideoPath,
-              looping: true
-            }
-          });
-        }
-      }
-      
-      // Switch to the scene
-      await this.obs.call('SetCurrentProgramScene', { 
-        sceneName: this.config.obsBaseSceneName 
-      });
-      
-      this.currentScene = this.config.obsBaseSceneName;
-      logger.info(`Successfully switched to base scene: ${this.config.obsBaseSceneName}`);
-      
-      return true;
-    } catch (error) {
-      logger.error(`Failed to switch to base scene: ${error instanceof Error ? error.message : String(error)}`);
-      return false;
-    }
-  }
-  
-  /**
-   * Switch to the generated scene
-   */
-  async switchToGeneratedScene(): Promise<boolean> {
-    if (!this.connected) {
-      logger.warn('OBS WebSocket not connected, cannot switch scenes');
-      return false;
-    }
-    
-    logger.info(`Attempting to switch to generated scene: ${this.config.obsGeneratedSceneName}`);
-    
-    try {
-      // Check if scene exists first
-      const scenes = await this.getSceneList();
-      const sceneExists = scenes.some(scene => 
-        scene.sceneName === this.config.obsGeneratedSceneName
-      );
-      
-      if (!sceneExists) {
-        logger.error(`Generated scene ${this.config.obsGeneratedSceneName} does not exist in OBS!`);
-        
-        // Try to recreate the scene as a recovery mechanism
-        logger.info(`Attempting to recreate generated scene`);
-        await this.obs.call('CreateScene', { sceneName: this.config.obsGeneratedSceneName });
-      }
-      
-      // Switch to the scene
-      await this.obs.call('SetCurrentProgramScene', { 
-        sceneName: this.config.obsGeneratedSceneName 
-      });
-      
-      this.currentScene = this.config.obsGeneratedSceneName;
-      logger.info(`Successfully switched to generated scene: ${this.config.obsGeneratedSceneName}`);
-      
-      return true;
-    } catch (error) {
-      logger.error(`Failed to switch to generated scene: ${error instanceof Error ? error.message : String(error)}`);
       return false;
     }
   }
@@ -408,9 +309,9 @@ export class OBSStream {
   }
   
   /**
-   * Play the next pending video from the queue
+   * Play the next video in a single scene
    */
-  private async playNextPendingVideo(): Promise<void> {
+  private async playNextVideoInSingleScene(): Promise<void> {
     if (this.pendingVideoQueue.length === 0 || this.isTransitioning) {
       return;
     }
@@ -424,50 +325,18 @@ export class OBSStream {
     }
     
     try {
-      // Process and play the video
-      await this.processAndPlayGeneratedVideo(nextVideoPath);
-    } catch (error) {
-      logger.error(`Failed to play next pending video: ${error instanceof Error ? error.message : String(error)}`);
-      this.isTransitioning = false;
-    }
-  }
-  
-  /**
-   * Process and play a generated video, handling all scene transitions
-   */
-  private async processAndPlayGeneratedVideo(videoPath: string): Promise<void> {
-    const absoluteVideoPath = path.resolve(videoPath);
-    
-    if (!fs.existsSync(absoluteVideoPath)) {
-      logger.error(`Video file not found: ${absoluteVideoPath}`);
-      this.isTransitioning = false;
-      return;
-    }
-    
-    // Generate a unique source name for this video
-    const videoFilename = path.basename(videoPath);
-    const uniqueSourceName = `Generated_${Date.now()}_${videoFilename}`;
-    
-    try {
-      // First clean up any old generated sources
+      const absoluteVideoPath = path.resolve(nextVideoPath);
+      const videoFilename = path.basename(nextVideoPath);
+      const uniqueSourceName = `Generated_${Date.now()}_${videoFilename}`;
+      
+      // Clean up any old generated sources
       await this.cleanupOldGeneratedSources();
       
-      // Make sure generated scene exists
-      const scenes = await this.getSceneList();
-      const sceneExists = scenes.some(scene => 
-        scene.sceneName === this.config.obsGeneratedSceneName
-      );
+      logger.info(`Creating new video source in scene: ${this.singleSceneName}`);
       
-      if (!sceneExists) {
-        logger.info(`Recreating generated scene before adding video source`);
-        await this.obs.call('CreateScene', { sceneName: this.config.obsGeneratedSceneName });
-      }
-      
-      logger.info(`Creating media source in generated scene: ${this.config.obsGeneratedSceneName}`);
-      
-      // Create a new media source in the generated scene
+      // Create the new source but set it with visible initially
       const response = await this.obs.call('CreateInput', {
-        sceneName: this.config.obsGeneratedSceneName,
+        sceneName: this.singleSceneName,
         inputName: uniqueSourceName,
         inputKind: 'ffmpeg_source',
         inputSettings: {
@@ -490,82 +359,97 @@ export class OBSStream {
       // If we got a valid response with sceneItemId, center the source
       if (response && response.sceneItemId) {
         logger.info(`Centering source in scene with sceneItemId: ${response.sceneItemId}`);
-        await this.centerSourceInScene(this.config.obsGeneratedSceneName, uniqueSourceName, response.sceneItemId);
+        await this.centerSourceInScene(this.singleSceneName, uniqueSourceName, response.sceneItemId);
+        
+        // Store the active generated source name
+        this.activeGeneratedSource = uniqueSourceName;
+        
+        // Find the base video source to hide it
+        const sourcesList = await this.obs.call('GetSceneItemList', {
+          sceneName: this.singleSceneName
+        });
+        
+        const baseSource = sourcesList.sceneItems.find(item => 
+          item.sourceName === this.baseSourceName
+        );
+        
+        if (baseSource && baseSource.sceneItemId) {
+          // Hide the base video
+          await this.obs.call('SetSceneItemEnabled', {
+            sceneName: this.singleSceneName,
+            sceneItemId: Number(baseSource.sceneItemId),
+            sceneItemEnabled: false
+          });
+          logger.info(`Hid base video source to show generated content`);
+        }
       } else {
-        logger.warn(`Could not get sceneItemId, skipping centering`);
+        logger.error(`Could not get sceneItemId for new source, aborting`);
+        this.isTransitioning = false;
+        return;
       }
       
-      logger.info(`Created new media source: ${uniqueSourceName}`);
+      logger.info(`Now playing generated video: ${uniqueSourceName}`);
       
       // Set up a one-time listener for when the generated video ends
       const mediaEndHandler = async (data: any) => {
         if (data.inputName === uniqueSourceName) {
-          logger.info(`Generated video ended: ${uniqueSourceName}, returning to base scene`);
+          logger.info(`Generated video ended: ${uniqueSourceName}, returning to base video`);
           
-          let endTime = 0;
+          // Find the sources again (they might have changed)
+          const currentSourcesList = await this.obs.call('GetSceneItemList', {
+            sceneName: this.singleSceneName
+          });
           
-          // Get the duration of the generated video
-          try {
-            const mediaInfo = await this.obs.call('GetMediaInputStatus', { inputName: uniqueSourceName });
-            endTime = mediaInfo.mediaDuration || 0;
-            logger.info(`Video duration: ${endTime}s`);
-          } catch (error) {
-            logger.error(`Failed to get generated video duration: ${error instanceof Error ? error.message : String(error)}`);
+          const baseSource = currentSourcesList.sceneItems.find(item => 
+            item.sourceName === this.baseSourceName
+          );
+          
+          // Show base video again
+          if (baseSource && baseSource.sceneItemId) {
+            await this.obs.call('SetSceneItemEnabled', {
+              sceneName: this.singleSceneName,
+              sceneItemId: Number(baseSource.sceneItemId),
+              sceneItemEnabled: true
+            });
+            logger.info(`Showing base video again`);
           }
           
-          // Switch back to base scene
-          const success = await this.switchToBaseScene();
+          // Clean up the generated source
+          try {
+            await this.obs.call('RemoveInput', { inputName: uniqueSourceName });
+            logger.info(`Removed completed media source: ${uniqueSourceName}`);
+          } catch (error) {
+            logger.error(`Failed to remove source: ${error instanceof Error ? error.message : String(error)}`);
+          }
           
-          if (success) {
-            // Clean up the source immediately after switching scenes
-            try {
-              await this.obs.call('RemoveInput', { inputName: uniqueSourceName });
-              logger.info(`Removed completed media source: ${uniqueSourceName}`);
-            } catch (error) {
-              logger.error(`Failed to remove source: ${error instanceof Error ? error.message : String(error)}`);
-            }
+          this.activeGeneratedSource = null;
+          
+          // Reset the base video if needed
+          try {
+            // Get current position of base video
+            const mediaInfo = await this.obs.call('GetMediaInputStatus', { 
+              inputName: this.baseSourceName 
+            });
+            logger.info(`Current base video state: ${JSON.stringify(mediaInfo)}`);
             
-            // Set the base video time to continue from where the generated video ended
-            try {
-              setTimeout(async () => {
-                try {
-                  const mediaInfo = await this.obs.call('GetMediaInputStatus', { inputName: 'Base Video' });
-                  logger.info(`Current base video state: ${JSON.stringify(mediaInfo)}`);
-                  
-                  await this.obs.call('SetInputSettings', {
-                    inputName: 'Base Video',
-                    inputSettings: {
-                      cursor_position: 10
-                    }
-                  });
-                  logger.info(`Set base video cursor_position to ${endTime}s`);
-                  
-                  await this.obs.call('TriggerMediaInputAction', {
-                    inputName: 'Base Video',
-                    mediaAction: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PLAY'
-                  });
-                  logger.info(`Restarted base video at position ${endTime}s`);
-                  
-                } catch (seekError) {
-                  logger.error(`Failed to set video position: ${seekError instanceof Error ? seekError.message : String(seekError)}`);
-                  return;
-                }
-                
-                // Release transition lock
-                this.isTransitioning = false;
-                
-                // Check for more pending videos
-                if (this.pendingVideoQueue.length > 0) {
-                  logger.info(`${this.pendingVideoQueue.length} videos still pending in queue`);
-                }
-              }, 1000);
-            } catch (error) {
-              logger.error(`Failed during scene transition: ${error instanceof Error ? error.message : String(error)}`);
-              this.isTransitioning = false;
-            }
-          } else {
-            logger.error(`Scene switch failed, releasing transition lock`);
-            this.isTransitioning = false;
+            // Restart base video playback
+            await this.obs.call('TriggerMediaInputAction', {
+              inputName: this.baseSourceName,
+              mediaAction: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PLAY'
+            });
+            logger.info(`Resumed base video playback`);
+          } catch (error) {
+            logger.error(`Error resuming base video: ${error instanceof Error ? error.message : String(error)}`);
+          }
+          
+          // Release transition lock
+          this.isTransitioning = false;
+          
+          // Check for more pending videos
+          if (this.pendingVideoQueue.length > 0) {
+            logger.info(`${this.pendingVideoQueue.length} videos still pending in queue`);
+            // Process next video after a short delay
+            setTimeout(() => this.playNextVideoInSingleScene(), 500);
           }
           
           // Remove this specific event listener
@@ -576,26 +460,8 @@ export class OBSStream {
       // Add the event handler
       this.obs.on('MediaInputPlaybackEnded', mediaEndHandler);
       
-      // Switch to the generated scene with a short delay to ensure media is ready
-      setTimeout(async () => {
-        const success = await this.switchToGeneratedScene();
-        if (success) {
-          logger.info(`Successfully switched to generated scene and now playing video: ${videoPath}`);
-        } else {
-          logger.error(`Failed to switch to generated scene, but media source was created`);
-          // Clean up the source if we failed to switch scenes
-          try {
-            await this.obs.call('RemoveInput', { inputName: uniqueSourceName });
-            logger.info(`Cleaned up media source after failed scene switch: ${uniqueSourceName}`);
-          } catch (error) {
-            logger.error(`Failed to clean up source: ${error instanceof Error ? error.message : String(error)}`);
-          }
-          this.isTransitioning = false;
-        }
-      }, 500);
-      
     } catch (error) {
-      logger.error(`Failed to process generated video: ${error instanceof Error ? error.message : String(error)}`);
+      logger.error(`Failed to play video in single scene: ${error instanceof Error ? error.message : String(error)}`);
       this.isTransitioning = false;
     }
   }
@@ -700,8 +566,8 @@ export class OBSStream {
   private async setupBaseVideoSource(baseVideoPath: string): Promise<void> {
     try {
       const response = await this.obs.call('CreateInput', {
-        sceneName: this.config.obsBaseSceneName,
-        inputName: 'Base Video',
+        sceneName: this.singleSceneName,
+        inputName: this.baseSourceName,
         inputKind: 'ffmpeg_source',
         inputSettings: {
           local_file: baseVideoPath,
@@ -711,16 +577,40 @@ export class OBSStream {
 
       // Set up audio monitoring for base video
       await this.obs.call('SetInputAudioMonitorType', {
-        inputName: 'Base Video',
+        inputName: this.baseSourceName,
         monitorType: 'OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT'
       });
       logger.info('Enabled audio monitoring for base video');
 
       if (response.sceneItemId) {
-        await this.centerSourceInScene(this.config.obsBaseSceneName, 'Base Video', response.sceneItemId);
+        await this.centerSourceInScene(this.singleSceneName, this.baseSourceName, response.sceneItemId);
       }
     } catch (error) {
       logger.error(`Failed to setup base video source: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  // Keeping these methods for backward compatibility, but they're no longer needed
+  async switchToBaseScene(): Promise<boolean> {
+    logger.info('Using single scene approach - no scene switching needed');
+    return true;
+  }
+  
+  async switchToGeneratedScene(): Promise<boolean> {
+    logger.info('Using single scene approach - no scene switching needed');
+    return true; 
+  }
+  
+  // This is no longer used, but keeping for backward compatibility
+  private async playNextPendingVideo(): Promise<void> {
+    return this.playNextVideoInSingleScene();
+  }
+  
+  // No longer used, but keeping for backward compatibility
+  private async processAndPlayGeneratedVideo(videoPath: string): Promise<void> {
+    logger.info('Using single scene approach - redirecting to playNextVideoInSingleScene');
+    // Just redirect to the new method
+    this.pendingVideoQueue.unshift(videoPath);
+    await this.playNextVideoInSingleScene();
   }
 }

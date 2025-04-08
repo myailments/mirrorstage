@@ -40,7 +40,7 @@ class AIPipeline {
   constructor() {
     this.config = {
       ...config,
-      testMode: false,
+      testMode: true,
       maxConcurrent: Math.min(config.maxConcurrent || 4, 20)
     };
     this.pipeline = new Map<string, PipelineItem>(); 
