@@ -110,8 +110,18 @@ const config: Config = {
   obsGeneratedSceneName: process.env.OBS_GENERATED_SCENE || 'Generated Scene',
   obsGeneratedSourceName: process.env.OBS_GENERATED_SOURCE || 'Generated Video',
 
+  // Supabase
+  supabaseUrl: process.env.SUPABASE_URL,
+  supabaseKey: process.env.SUPABASE_ANON_KEY,
+
   // Add selected services for reference
   selectedServices,
+
+  // AWS configuration
+  awsRegion: process.env.AWS_REGION,
+  awsAccessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  awsSecretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  awsBucketName: process.env.AWS_BUCKET_NAME,
 };
 
 // Validate configuration

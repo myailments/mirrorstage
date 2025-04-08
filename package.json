@@ -15,7 +15,10 @@
     "cli:dev": "tsx server/app.ts --cli"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.779.0",
+    "@aws-sdk/s3-request-presigner": "^3.779.0",
     "@fal-ai/client": "^1.2.3",
+    "@supabase/supabase-js": "^2.49.4",
     "@zyphra/client": "^1.0.3",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",

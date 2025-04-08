@@ -23,8 +23,6 @@ export class OBSStream {
   private config: Config;
   private connected: boolean = false;
   private currentScene: string;
-  private baseVideoTimePosition: number = 0;
-  private baseVideoDuration: number = 0;
   private pendingVideoQueue: string[] = [];
   private isTransitioning: boolean = false;
 
@@ -71,83 +69,6 @@ export class OBSStream {
       // Update our current scene
       if (data && data.sceneName) {
         this.currentScene = data.sceneName;
-      }
-    });
-    
-    // Track base video time position
-    this.obs.on('MediaInputPlaybackStarted', async (data) => {
-      if (data.inputName === 'Base Video') {
-        logger.info('Base video playback started');
-      }
-    });
-    
-    // This tracks the most recent video media time to detect loop completion
-    let lastMediaTime = 0;
-    
-    // For base video, the key is to detect when it loops (time goes from high to low)
-    let loopDetectionThreshold = 5; // Time jump must be larger than this to count as a loop
-    
-    setInterval(async () => {
-      if (this.connected && this.currentScene === this.config.obsBaseSceneName) {
-        try {
-          // First check if the Base Video input actually exists
-          const inputList = await this.obs.call('GetInputList');
-          const baseVideoExists = inputList.inputs.some((input: any) => input.inputName === 'Base Video');
-          
-          if (!baseVideoExists) {
-            // logger.warn('Base Video input not found during loop detection');
-            lastMediaTime = 0; // Reset the media time tracking
-            // Give a 5 second delay
-            await new Promise(resolve => setTimeout(resolve, 5000));
-            return; // Skip this cycle
-            
-          }
-          
-          const mediaInfo = await this.obs.call('GetMediaInputStatus', { inputName: 'Base Video' });
-
-          const currentMediaTime = mediaInfo.mediaCursor || 0;
-          const isPlaying = mediaInfo.mediaState === 'OBS_MEDIA_STATE_PLAYING';
-          
-          // Store video duration if available
-          if (mediaInfo.mediaDuration) {
-            this.baseVideoDuration = mediaInfo.mediaDuration;
-          }
-          
-          // Store current position
-          this.baseVideoTimePosition = currentMediaTime;
-          
-          // More robust loop detection with additional checks
-          if (isPlaying && lastMediaTime > loopDetectionThreshold && 
-              currentMediaTime < lastMediaTime - loopDetectionThreshold && 
-              this.pendingVideoQueue.length > 0 && !this.isTransitioning) {
-            
-            
-            // Log only on the first detection to avoid log spam
-              logger.info(`Potential loop detected! Base video time jumped from ${lastMediaTime.toFixed(2)}s to ${currentMediaTime.toFixed(2)}s`);
-              await this.playNextPendingVideo();
-          
-          }
-
-          
-          lastMediaTime = currentMediaTime;
-        } catch (error) {
-          // Silent fail, but reset media time tracking if errors persist
-          if (error instanceof Error && error.message.includes('not found')) {
-            lastMediaTime = 0;
-          }
-        }
-      } else {
-        // Reset time tracking when we're not on the base scene
-        lastMediaTime = 0;
-      }
-    }, 100); // Check more frequently (reduced from 500ms to 200ms)
-    
-    // Handle playback end events for the base video as backup
-    this.obs.on('MediaInputPlaybackEnded', async (data) => {
-      if (data.inputName === 'Base Video' && this.pendingVideoQueue.length > 0 && !this.isTransitioning) {
-        // Base video just finished, this is a good time to transition
-        logger.info('Base video ended event, transitioning to generated video');
-        await this.playNextPendingVideo();
       }
     });
   }
@@ -343,15 +264,9 @@ export class OBSStream {
       this.pendingVideoQueue.push(absoluteVideoPath);
       logger.info(`Added video to queue: ${absoluteVideoPath} (queue size: ${this.pendingVideoQueue.length})`);
       
-      // Wait for the base video to complete its loop before transitioning
-      if (this.pendingVideoQueue.length === 1) {
-        logger.info(`First video in queue - will transition at next loop point`);
-        
-        // Log current position relative to loop point
-        if (this.currentScene === this.config.obsBaseSceneName && this.baseVideoDuration > 0) {
-          const timeUntilEnd = Math.max(0, this.baseVideoDuration - this.baseVideoTimePosition);
-          logger.info(`Base video at ${this.baseVideoTimePosition.toFixed(2)}s, approximately ${timeUntilEnd.toFixed(2)}s until loop completion`);
-        }
+      // Process immediately if not transitioning
+      if (!this.isTransitioning && this.pendingVideoQueue.length === 1) {
+        await this.playNextPendingVideo();
       } else {
         // Log queue status
         if (this.isTransitioning) {
@@ -491,8 +406,6 @@ export class OBSStream {
   isConnected(): boolean {
     return this.connected;
   }
-  
-
   
   /**
    * Play the next pending video from the queue

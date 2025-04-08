@@ -110,6 +110,15 @@ export interface Config {
 
   // Test mode
   testMode?: boolean;
+
+  supabaseUrl?: string;
+  supabaseKey?: string;
+
+  // AWS Configuration
+  awsRegion?: string;
+  awsAccessKeyId?: string;
+  awsSecretAccessKey?: string;
+  awsBucketName?: string;
 }
 
 // Pipeline Item Status

@@ -183,7 +183,6 @@ The response should start with [ and end with ]. Example:
       
       try {
         const parsedResponse = JSON.parse(cleanedContent);
-        console.log(parsedResponse);
         return parsedResponse;
       } catch (parseError) {
         logger.error(`Failed to parse OpenRouter JSON response: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
