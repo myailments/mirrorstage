@@ -92,7 +92,7 @@ export class ElevenLabsTTS extends BaseTTS {
       });
 
       if (!response.ok) {
-        throw new Error(`ElevenLabs API error: ${response.status} ${response.statusText}`);
+        throw new Error(`ElevenLabs API error: ${response.status} ${response.statusText}, response: ${await response.text()}`);
       }
 
       // Save the audio file

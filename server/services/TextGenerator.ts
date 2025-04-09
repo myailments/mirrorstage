@@ -33,12 +33,12 @@ export class TextGenerator {
   /**
    * Generate a response to user input
    */
-  async generateText(userInput: string): Promise<string> {
-    const systemPrompt = createSystemPrompt({ context: 'You are to be responding to a livestreaming audience as part of an AI pipeline. Your text will be turned into a talking head video, so keep it short and concise, and be sure to emphasize the use of tone, but not style. Your responses should be formatted to be machine-readable and read aloud by an AI voice.' });
+  async generateText(userInput: string, context?: string[]): Promise<string> {
+    const systemPrompt = createSystemPrompt({ context: 'You are a livestreamer as part of an AI pipeline. Your text will be turned into a talking head video, so keep it short and concise, and be sure to emphasize the use of tone, but not style. Your responses should be formatted to be machine-readable and read aloud by an AI voice. Do not use markdown or other formatting. Just plain text.' });
  
     try {
       if (this.useOpenRouter) {
-        return await this.generateWithOpenRouter(userInput, systemPrompt);
+        return await this.generateWithOpenRouter(userInput, systemPrompt, context);
       } else {
         return await this.generateWithOpenAI(userInput, systemPrompt);
       }
@@ -78,7 +78,7 @@ export class TextGenerator {
     return response;
   }
 
-  private async generateWithOpenRouter(userInput: string, systemPrompt: string): Promise<string> {
+  private async generateWithOpenRouter(userInput: string, systemPrompt: string, context?: string[]): Promise<string> {
     if (!this.openRouter) {
       throw new Error('OpenRouter client not initialized');
     }
@@ -91,7 +91,7 @@ export class TextGenerator {
       messages: [
         {
           role: "system",
-          content: systemPrompt
+          content: systemPrompt + (context ? `\n\nContext: ${context.join('\n')}` : '')
         },
         {
           role: "user",

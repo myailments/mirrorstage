@@ -122,6 +122,12 @@ const config: Config = {
   awsAccessKeyId: process.env.AWS_ACCESS_KEY_ID,
   awsSecretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   awsBucketName: process.env.AWS_BUCKET_NAME,
+  
+  // Vision configuration
+  useVision: process.env.USE_VISION === 'true',
+  visionSourceName: process.env.VISION_SOURCE_NAME || 'Display Capture',
+  visionIntervalSeconds: parseInt(process.env.VISION_INTERVAL_SECONDS || '30', 10),
+  visionPrompt: process.env.VISION_PROMPT || 'You are analyzing a livestream. What is happening in this image?',
 };
 
 // Validate configuration

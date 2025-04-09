@@ -2,12 +2,12 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { LLMService, TTSService, VideoSyncService, MediaStreamService } from '../types';
+import { LLMService, TTSService, VideoSyncService, MediaStreamService, StreamAnalysisService } from '../types';
 // Get __dirname equivalent in ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-type ServiceName = LLMService | TTSService | VideoSyncService | MediaStreamService;
+type ServiceName = LLMService | TTSService | VideoSyncService | MediaStreamService | StreamAnalysisService;
 
 // ANSI Colors
 const colors = {

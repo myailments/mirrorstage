@@ -50,6 +50,12 @@ export interface Config {
   maxConcurrent?: number;
   minPriority?: number;
   checkInterval?: number;
+  
+  // Vision configuration
+  useVision?: boolean;
+  visionSourceName?: string;
+  visionIntervalSeconds?: number;
+  visionPrompt?: string;
 
   // Service Selection
   selectedServices: SelectedServices;
@@ -181,4 +187,47 @@ export interface PipelineStatusSummary {
 export interface InputResponse {
   messageId: string;
   status: PipelineStatus;
+}
+
+
+// Stream analysis types
+
+export enum StreamAnalysisService {
+  GPT_VISION = 'gpt-vision',
+  CLAUDE = 'claude',
+  GOOGLE_VISION = 'google-vision'
+}
+
+export interface StreamAnalysisResult {
+  timestamp: string;
+  imagePath: string;
+  analysis: {
+    description: string;
+    confidence?: number;
+    detectedObjects?: DetectedObject[];
+    detectedText?: string;
+    model: string;
+    tokensUsed?: number;
+  };
+}
+
+export interface DetectedObject {
+  name: string;
+  confidence: number;
+  boundingBox?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+}
+
+export interface StreamAnalysisConfig {
+  enabled: boolean;
+  service: StreamAnalysisService;
+  captureSource: string;
+  captureFrequencyMs: number;
+  analysisPrompt: string;
+  saveScreenshots: boolean;
+  maxStoredScreenshots: number;
 }
