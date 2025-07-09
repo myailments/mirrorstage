@@ -15,10 +15,10 @@ This system integrates various AI technologies to create a complete pipeline for
 ## Features
 
 - **OBS-Focused**: Designed specifically for integration with OBS Studio for livestreaming
-- **Modular Architecture**: Easily swap between different providers for each component (OpenAI/OpenRouter, ElevenLabs/Zonos TTS, etc.)
+- **Modular Architecture**: Easily swap between different providers for each component (OpenAI/OpenRouter, ElevenLabs, etc.)
 - **Vision Analysis**: Optional computer vision system that can analyze and respond to stream content
 - **Configurable Prompts**: Customize AI character, behavior and responses through configuration
-- **Local & API Options**: Mix and match between local services and cloud APIs based on your needs
+- **Cloud-Based Services**: Utilizes cloud APIs for reliable performance
 - **CLI Control**: Full command-line interface for controlling the system during streaming
 
 ## Architecture
@@ -34,14 +34,13 @@ The system follows a modular, service-oriented architecture designed for OBS int
 Each component can be configured to use different implementations:
 
 - **Text Generation**: OpenAI, OpenRouter, or custom APIs
-- **TTS**: Zonos TTS (local), Zonos API, or ElevenLabs
-- **Video Sync**: Local LatentSync, FAL.ai API, or Sync Labs
+- **TTS**: ElevenLabs or other cloud-based TTS services
+- **Video Sync**: FAL.ai API or Sync Labs
 - **Media Streaming**: OBS integration with automatic scene management
 
 ## Requirements
 
-- Node.js 18+ 
-- Python 3.10+ (for local TTS and sync services)
+- Node.js 18+
 - OBS Studio 28+ (with WebSocket plugin enabled)
 - FFmpeg (for audio/video processing)
 
@@ -51,7 +50,8 @@ Each component can be configured to use different implementations:
 
 Before installation, prepare the following required media files:
 
-1. **Base Video (Required)**: 
+1. **Base Video (Required)**:
+
    - A 10-20 second loopable video of the character you want to animate
    - Place in `assets/base_video.mp4`
    - Should be looking at the camera with minimal movement
@@ -61,28 +61,30 @@ Before installation, prepare the following required media files:
    - Place in `assets/base_audio.wav`
    - Clear audio with minimal background noise
 
-See [Setup Guide](docs/setup.md) for detailed media specifications.
-
 ### Quick Start
 
 1. Clone the repository:
+
    ```bash
    git clone https://github.com/your-repo/stream-service.git
    cd stream-service
    ```
 
 2. Install dependencies:
+
    ```bash
    npm install
    ```
 
 3. Create required directories and add your media files:
+
    ```bash
    mkdir -p assets generated_videos
    # Add your base_video.mp4 and base_audio.wav to the assets directory
    ```
 
 4. Set up environment:
+
    ```bash
    cp .env.example .env
    ```
@@ -90,6 +92,7 @@ See [Setup Guide](docs/setup.md) for detailed media specifications.
 5. Edit `.env` with your configuration (API keys, service selection, etc.)
 
 6. Run the setup script:
+
    ```bash
    npm run setup
    ```
@@ -127,6 +130,7 @@ npm run cli:dev
 ```
 
 In CLI mode, you can:
+
 - Enter text prompts that will be processed through the AI pipeline
 - Watch as responses are automatically sent to OBS
 - Use special commands to control the system (type 'help' for a list)
@@ -134,25 +138,13 @@ In CLI mode, you can:
 ### OBS Studio Integration
 
 The system automatically connects to OBS Studio and:
+
 - Creates an "AI_Streamer" scene collection (or uses an existing one)
 - Sets up the necessary scenes and sources
 - Handles video switching between base loop and AI responses
 - Enables vision-based analysis of the stream (if enabled)
 
 Make sure OBS Studio is running with the WebSocket server enabled before starting the service.
-
-See [OBS Setup](OBS_SETUP.md) for detailed OBS configuration instructions.
-
-### API Endpoints
-
-The service also exposes several REST endpoints for integration with other tools:
-
-- `POST /input`: Submit user input to the pipeline
-- `GET /health`: Check system status
-- `POST /vision/start`: Start vision-based analysis
-- `POST /vision/stop`: Stop vision-based analysis
-
-See [API Documentation](docs/api.md) for details.
 
 ## Customization
 
@@ -171,12 +163,14 @@ Modify `server/prompts/system_prompt.ts` to change the system instructions that 
 The quality of your base video significantly impacts the final result. Here are tips for creating an effective base video:
 
 1. **Recording Setup**:
+
    - Use good lighting (front-facing, diffused light)
    - Use a neutral background
    - Position the subject centered in the frame
    - Ensure the face is well-lit with minimal shadows
 
 2. **Subject Guidelines**:
+
    - The subject should be looking directly at the camera
    - Maintain a neutral expression or slight smile
    - Minimize head movement
@@ -184,6 +178,7 @@ The quality of your base video significantly impacts the final result. Here are 
    - Keep the mouth slightly open or in a natural rest position
 
 3. **Technical Specifications**:
+
    - Record at 30fps (or 24fps minimum)
    - Use 1080p resolution if possible
    - Ensure the video is 10-20 seconds long
@@ -205,32 +200,6 @@ For the base audio sample:
 4. Save as a 44.1kHz, 16-bit WAV file
 5. Place in `assets/base_audio.wav`
 
-## Local Services
-
-The system can use local services for TTS and video synchronization:
-
-### Zonos TTS
-
-A local TTS service that converts text to natural-sounding speech.
-
-Setup:
-```bash
-./scripts/setup_zonos.sh
-```
-
-### LatentSync
-
-A local service for lip-syncing audio to video.
-
-Setup:
-```bash
-./scripts/setup_latentsync.sh
-```
-
-## OBS Integration
-
-The system can integrate with OBS for livestreaming. See [OBS Setup](OBS_SETUP.md) for details.
-
 ## Development
 
 ### Building the Project
@@ -245,6 +214,53 @@ npm run build
 npm run typecheck
 ```
 
+### Code Quality and Formatting
+
+This project uses [Biome](https://biomejs.dev/) for linting and formatting. The configuration extends the "ultracite" preset with custom rules.
+
+#### Linting
+
+Run the linter to check for code quality issues:
+
+```bash
+npm run lint
+```
+
+Fix auto-fixable linting issues:
+
+```bash
+npm run lint:fix
+```
+
+#### Formatting
+
+Check code formatting:
+
+```bash
+npm run format:check
+```
+
+Format code automatically:
+
+```bash
+npm run format
+```
+
+#### Biome Configuration
+
+The project uses the following Biome configuration (`biome.jsonc`):
+
+- **Extends**: [`ultracite` preset for comprehensive rules](https://www.ultracite.ai/introduction)
+- **Cognitive Complexity**: Maximum allowed complexity of 16 (error level)
+- **File Naming**: Disabled to allow flexible naming conventions
+
+Key linting rules enforced:
+
+- Complexity limits to maintain readable code
+- Accessibility best practices for UI components
+- TypeScript-specific rules for type safety
+- Modern JavaScript/TypeScript patterns
+
 ### Adding New Services
 
 The modular architecture makes it easy to add new service implementations:
@@ -253,23 +269,3 @@ The modular architecture makes it easy to add new service implementations:
 2. Add the service type to the appropriate enum in `server/types/index.ts`
 3. Update the configuration handler in `server/config.ts`
 4. Add the service to the factory in `server/services/PipelineInitializer.ts`
-
-## Contributing
-
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgements
-
-This project utilizes several amazing technologies:
-- OpenAI's GPT models for text generation
-- Zonos TTS for speech synthesis
-- LatentSync for video synchronization
-- OBS Studio for streaming integration
-
-## Security
-
-See [SECURITY.md](SECURITY.md) for security considerations and reporting vulnerabilities.

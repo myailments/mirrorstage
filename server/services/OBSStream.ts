@@ -444,7 +444,7 @@ export class OBSStream {
         `Creating new video source in scene: ${this.singleSceneName}`
       );
 
-      // Create the new source but set it with visible initially
+      // Create the new source
       const response = await this.obs.call('CreateInput', {
         sceneName: this.singleSceneName,
         inputName: uniqueSourceName,
@@ -470,11 +470,11 @@ export class OBSStream {
         );
       }
 
-      // If we got a valid response with sceneItemId, center the source
       if (response?.sceneItemId) {
         logger.info(
           `Setting up source in scene with sceneItemId: ${response.sceneItemId}`
         );
+
         // Copy filters and properties from base source to new source
         await this.copyFiltersAndProperties(
           this.baseSourceName,
@@ -484,7 +484,7 @@ export class OBSStream {
         // Store the active generated source name
         this.activeGeneratedSource = uniqueSourceName;
 
-        // Find the base video source to hide it
+        // Find the base video source to hide it (but keep it playing)
         const sourcesList = await this.obs.call('GetSceneItemList', {
           sceneName: this.singleSceneName,
         });
@@ -494,13 +494,15 @@ export class OBSStream {
         );
 
         if (baseSource?.sceneItemId) {
-          // Hide the base video
+          // Hide the base video but don't pause it - this ensures instant resume later
           await this.obs.call('SetSceneItemEnabled', {
             sceneName: this.singleSceneName,
             sceneItemId: Number(baseSource.sceneItemId),
             sceneItemEnabled: false,
           });
-          logger.info('Hid base video source to show generated content');
+          logger.info(
+            'Hid base video source (keeping it playing in background)'
+          );
         }
       } else {
         logger.error('Could not get sceneItemId for new source, aborting');
@@ -537,15 +539,31 @@ export class OBSStream {
     mediaEndHandler: (data: OBSMediaEvent) => Promise<void>
   ): Promise<void> {
     logger.info(
-      `Generated video ended: ${uniqueSourceName}, returning to base video`
+      `Generated video ended: ${uniqueSourceName}, returning to base video instantly`
     );
 
-    // Add a delay before switching back to base video
-    await new Promise((resolve) => setTimeout(resolve, 1000)); // 1 second delay
+    // Remove the artificial delay and optimize the transition
+    try {
+      // Execute all transition operations in parallel for instantaneous switch
+      await Promise.all([
+        this.showBaseVideo(),
+        this.resumeBaseVideoPlayback(),
+        this.cleanupGeneratedSource(uniqueSourceName),
+      ]);
 
-    await this.showBaseVideo();
-    await this.cleanupGeneratedSource(uniqueSourceName);
-    await this.resumeBaseVideoPlayback();
+      logger.info('Instant transition back to base video completed');
+    } catch (error) {
+      logger.error(
+        `Error during instant transition: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+
+      // Fallback to sequential operations if parallel fails
+      await this.showBaseVideo();
+      await this.cleanupGeneratedSource(uniqueSourceName);
+      await this.resumeBaseVideoPlayback();
+    }
 
     // Release transition lock
     this.isTransitioning = false;
@@ -555,8 +573,8 @@ export class OBSStream {
       logger.info(
         `${this.pendingVideoQueue.length} videos still pending in queue`
       );
-      // Process next video after a short delay
-      setTimeout(() => this.playNextVideoInSingleScene(), 500);
+      // Process next video immediately (no delay needed)
+      setTimeout(() => this.playNextVideoInSingleScene(), 100); // Minimal delay for OBS to settle
     }
 
     // Remove this specific event listener
@@ -602,18 +620,12 @@ export class OBSStream {
 
   private async resumeBaseVideoPlayback(): Promise<void> {
     try {
-      // Get current position of base video
-      const mediaInfo = await this.obs.call('GetMediaInputStatus', {
-        inputName: this.baseSourceName,
-      });
-      logger.info(`Current base video state: ${JSON.stringify(mediaInfo)}`);
-
-      // Restart base video playback
+      // Skip status check to avoid delay - just resume immediately
       await this.obs.call('TriggerMediaInputAction', {
         inputName: this.baseSourceName,
         mediaAction: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PLAY',
       });
-      logger.info('Resumed base video playback');
+      logger.info('Resumed base video playback instantly');
     } catch (error) {
       logger.error(
         `Error resuming base video: ${

@@ -36,6 +36,7 @@ export class TextGenerator {
   async generateText(userInput: string, context?: string[]): Promise<string> {
     // Create system prompt with configurable parameters
     const systemPrompt = createSystemPrompt({
+      characterName: 'Rasmr',
       context:
         'Your text will be turned into a talking head video, so keep it short and concise.',
       roleDescription:

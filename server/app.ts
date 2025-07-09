@@ -17,6 +17,7 @@
  * @license MIT
  */
 import 'dotenv/config';
+import fs from 'node:fs';
 import express from 'express';
 import config from './config.ts';
 import {
@@ -243,8 +244,8 @@ class AIPipeline {
       this.updateStatus(item, PipelineStatus.COMPLETED);
       // Clean up files
       if (!this.config.testMode) {
-        // fs.unlinkSync(audioPath);
-        // fs.unlinkSync(videoPath);
+        fs.unlinkSync(audioPath);
+        fs.unlinkSync(videoPath);
       }
     } catch (error) {
       logger.error(
