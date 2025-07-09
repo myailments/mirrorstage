@@ -1,13 +1,17 @@
-import { logger } from '../utils/logger.js';
-import { FileManager } from './FileManager.js';
-import { MessageEvaluator, TestMessageEvaluator } from './Evaluator.js';
-import { ZonosTTS, ElevenLabsTTS, ZonosTTSAPI, TestTTS } from './TTS.js';
-import { LocalLatentSync, FalLatentSync, TestVideoSync, SyncLabsSync } from './VideoSync.js';
-import { TestTextGenerator, TextGenerator } from './TextGenerator.js';
-import { OBSStream } from './OBSStream.js';
 import type { Config } from '../types/index.js';
-import { TTSService, VideoSyncService } from './interfaces.js';
-import { MediaStreamService } from '../types/index.js';
+import { logger } from '../utils/logger.js';
+import { MessageEvaluator, TestMessageEvaluator } from './Evaluator.js';
+import { FileManager } from './FileManager.js';
+import type { TTSService, VideoSyncService } from './interfaces.js';
+import { OBSStream } from './OBSStream.js';
+import { TestTextGenerator, TextGenerator } from './TextGenerator.js';
+import { ElevenLabsTTS, TestTTS, ZonosTTS, ZonosTTSAPI } from './TTS.js';
+import {
+  FalLatentSync,
+  LocalLatentSync,
+  SyncLabsSync,
+  TestVideoSync,
+} from './VideoSync.js';
 
 export interface PipelineServices {
   fileManager: FileManager;
@@ -15,7 +19,7 @@ export interface PipelineServices {
   textGenerator: TextGenerator;
   tts: TTSService;
   sync: VideoSyncService;
-  obsStream?: OBSStream;
+  obsStream: OBSStream;
 }
 
 export class PipelineInitializer {
@@ -32,97 +36,143 @@ export class PipelineInitializer {
     try {
       // Initialize file manager
       const fileManager = new FileManager(this.config);
-      await fileManager.initializeDirectories();
+      fileManager.initializeDirectories();
       fileManager.verifyBaseVideo();
       fileManager.verifyBaseAudio();
 
       // Initialize services
       const services: PipelineServices = {
         fileManager,
-        evaluator: this.config.testMode ? 
-          new TestMessageEvaluator(this.config) :
-          new MessageEvaluator(this.config),
-        textGenerator: this.config.testMode ? 
-          new TestTextGenerator(this.config) :
-          new TextGenerator(this.config),
-        tts: this.config.testMode ? 
-          new TestTTS(this.config) :
-          this.config.useElevenLabs ? 
-          new ElevenLabsTTS(this.config) : 
-          this.config.useZonosTTSLocal ?
-          new ZonosTTS(this.config) : 
-          this.config.useZonosTTSAPI ?
-          new ZonosTTSAPI(this.config) : 
-          // Default to ZonosTTS if no service specified
-          new ZonosTTS(this.config),
-        sync: this.config.testMode ? 
-          new TestVideoSync(this.config) :
-          this.config.useFalLatentSync ? 
-          new FalLatentSync(this.config) : 
-          this.config.useSyncLabs ?
-          new SyncLabsSync(this.config) :
-          new LocalLatentSync(this.config)
+        evaluator: this.createEvaluatorService(),
+        textGenerator: this.createTextGeneratorService(),
+        tts: this.createTTSService(),
+        sync: this.createSyncService(),
+        obsStream: this.createOBSService(),
       };
-      
-      // Initialize OBS streaming service if enabled
-      if (this.config.selectedServices.mediaStream === MediaStreamService.OBS) {
-        services.obsStream = new OBSStream(this.config);
-        // Connect to OBS WebSocket
-        await services.obsStream.connect();
-      }
 
+      // Connect to OBS WebSocket
+      await services.obsStream.connect();
 
       // Test service connections
       await this.testServices(services);
 
       logger.info('Pipeline initialization complete');
       return services;
-
     } catch (error) {
-      logger.error(`Pipeline initialization failed: ${error instanceof Error ? error.message : String(error)}`);
+      logger.error(
+        `Pipeline initialization failed: ${error instanceof Error ? error.message : String(error)}`
+      );
       throw error;
     }
+  }
+
+  private createEvaluatorService() {
+    return this.config.testMode
+      ? new TestMessageEvaluator(this.config)
+      : new MessageEvaluator(this.config);
+  }
+
+  private createTextGeneratorService() {
+    return this.config.testMode
+      ? new TestTextGenerator(this.config)
+      : new TextGenerator(this.config);
+  }
+
+  private createTTSService(): TTSService {
+    if (this.config.testMode) {
+      return new TestTTS(this.config);
+    }
+    if (this.config.useElevenLabs) {
+      return new ElevenLabsTTS(this.config);
+    }
+    if (this.config.useZonosTTSLocal) {
+      return new ZonosTTS(this.config);
+    }
+    if (this.config.useZonosTTSAPI) {
+      return new ZonosTTSAPI(this.config);
+    }
+    // Default to ZonosTTS if no service specified
+    return new ZonosTTS(this.config);
+  }
+
+  private createSyncService(): VideoSyncService {
+    if (this.config.testMode) {
+      return new TestVideoSync(this.config);
+    }
+    if (this.config.useFalLatentSync) {
+      return new FalLatentSync(this.config);
+    }
+    if (this.config.useSyncLabs) {
+      return new SyncLabsSync(this.config);
+    }
+    return new LocalLatentSync(this.config);
+  }
+
+  private createOBSService(): OBSStream {
+    return new OBSStream(this.config);
   }
 
   /**
    * Test service connections
    */
   async testServices(services: PipelineServices): Promise<void> {
-    // Test text generation service
+    await this.testTextGeneratorService(services.textGenerator);
+    await this.testTTSService(services.tts);
+    await this.testSyncService(services.sync);
+    await this.testOBSService(services.obsStream);
+  }
+
+  private async testTextGeneratorService(textGenerator: {
+    testConnection(): Promise<boolean>;
+  }): Promise<void> {
     try {
-      await services.textGenerator.testConnection();
+      await textGenerator.testConnection();
       logger.info('Text generation service connection verified');
     } catch (error) {
-      logger.warn(`Text generation service warning: ${error instanceof Error ? error.message : String(error)}`);
+      logger.warn(
+        `Text generation service warning: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
+  }
 
-    // Test TTS service
+  private async testTTSService(tts: TTSService): Promise<void> {
     try {
-      await services.tts.testConnection();
+      await tts.testConnection();
       logger.info('TTS service connection verified');
     } catch (error) {
-      logger.warn(`TTS service connection warning: ${error instanceof Error ? error.message : String(error)}`);
+      logger.warn(
+        `TTS service connection warning: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
+  }
 
-    // Test Sync service
+  private async testSyncService(sync: VideoSyncService): Promise<void> {
     try {
-      await services.sync.testConnection();
+      await sync.testConnection();
       logger.info('Video sync service connection verified');
     } catch (error) {
-      logger.warn(`Video sync service connection warning: ${error instanceof Error ? error.message : String(error)}`);
+      logger.warn(
+        `Video sync service connection warning: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
-    
-    // Test OBS connection if configured
-    if (services.obsStream) {
-      try {
-        if (services.obsStream.isConnected()) {
-          logger.info('OBS WebSocket connection verified');
-        } else {
-          logger.warn('OBS WebSocket connection not established');
-        }
-      } catch (error) {
-        logger.warn(`OBS WebSocket connection warning: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  private testOBSService(obsStream?: OBSStream): Promise<void> {
+    if (!obsStream) {
+      return Promise.resolve();
+    }
+
+    try {
+      if (obsStream.isConnected()) {
+        logger.info('OBS WebSocket connection verified');
+      } else {
+        logger.warn('OBS WebSocket connection not established');
       }
+    } catch (error) {
+      logger.warn(
+        `OBS WebSocket connection warning: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
+    return Promise.resolve();
   }
 }

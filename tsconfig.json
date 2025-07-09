@@ -15,7 +15,8 @@
     "sourceMap": true,
     "declaration": true,
     "allowImportingTsExtensions": true,
-    "noEmit": true
+    "noEmit": true,
+    "strictNullChecks": true
   },
   "include": ["server/**/*", "client/**/*"],
   "exclude": ["node_modules", "dist"]

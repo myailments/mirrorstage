@@ -1,13 +1,23 @@
-// Simple logging utility
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { LLMService, TTSService, VideoSyncService, MediaStreamService, StreamAnalysisService } from '../types';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type {
+  LLMService,
+  StreamAnalysisService,
+  TTSService,
+  VideoSyncService,
+} from '../types';
+
 // Get __dirname equivalent in ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-type ServiceName = LLMService | TTSService | VideoSyncService | MediaStreamService | StreamAnalysisService;
+type ServiceName =
+  | LLMService
+  | TTSService
+  | VideoSyncService
+  | StreamAnalysisService
+  | 'OBS';
 
 // ANSI Colors
 const colors = {
@@ -19,7 +29,7 @@ const colors = {
   yellow: '\x1b[33m',
   blue: '\x1b[34m',
   magenta: '\x1b[35m',
-  cyan: '\x1b[36m'
+  cyan: '\x1b[36m',
 };
 
 // Ensure logs directory exists
@@ -33,16 +43,20 @@ const logFile = path.join(logsDir, 'app.log');
 type LogLevel = 'INFO' | 'WARN' | 'ERROR';
 type LogMessage = string | object;
 
-function log(level: LogLevel, message: LogMessage, serviceName?: ServiceName): void {
+function log(
+  level: LogLevel,
+  message: LogMessage,
+  serviceName?: ServiceName
+): void {
   const timestamp = new Date().toISOString();
-  
+
   // Plain message for file
   const fileMessage = `[${timestamp}] [${level}] ${typeof message === 'object' ? JSON.stringify(message) : message}\n`;
-  
+
   // Colored message for console
   let consoleColor = colors.reset;
   let emoji = 'ℹ️';
-  
+
   switch (level) {
     case 'ERROR':
       consoleColor = colors.red;
@@ -53,6 +67,7 @@ function log(level: LogLevel, message: LogMessage, serviceName?: ServiceName): v
       emoji = '⚠️';
       break;
     case 'INFO':
+      break;
     default:
       consoleColor = colors.cyan;
       emoji = 'ℹ️';
@@ -63,22 +78,31 @@ function log(level: LogLevel, message: LogMessage, serviceName?: ServiceName): v
 
   // Special formatting for queue status
   if (typeof message === 'string' && message.includes('Queue Status:')) {
-    console.log(`${colors.dim}[${timestamp}]${colors.reset} ${consoleColor}[${level}]${colors.reset} ${emoji} ${colors.dim}${serviceLabel}${colors.reset}`);
+    // biome-ignore lint/suspicious/noConsole: logger utility is allowed to use console
+    console.log(
+      `${colors.dim}[${timestamp}]${colors.reset} ${consoleColor}[${level}]${colors.reset} ${emoji} ${colors.dim}${serviceLabel}${colors.reset}`
+    );
+    // biome-ignore lint/suspicious/noConsole: logger utility is allowed to use console
     console.log(`${colors.magenta}${message}${colors.reset}`);
   } else {
     // Format objects if needed
-    const displayMessage = typeof message === 'object' 
-      ? JSON.stringify(message, null, 2)
-      : message;
-    console.log(`${colors.dim}[${timestamp}]${colors.reset} ${colors.blue}${serviceLabel}${colors.reset} ${consoleColor}[${level}]${colors.reset} ${emoji} ${displayMessage}`);
+    const displayMessage =
+      typeof message === 'object' ? JSON.stringify(message, null, 2) : message;
+    // biome-ignore lint/suspicious/noConsole: logger utility is allowed to use console
+    console.log(
+      `${colors.dim}[${timestamp}]${colors.reset} ${colors.blue}${serviceLabel}${colors.reset} ${consoleColor}[${level}]${colors.reset} ${emoji} ${displayMessage}`
+    );
   }
-  
+
   // Log to file (without colors)
   fs.appendFileSync(logFile, fileMessage);
 }
 
 export const logger = {
-  info: (message: LogMessage, serviceName?: ServiceName): void => log('INFO', message, serviceName),
-  warn: (message: LogMessage, serviceName?: ServiceName): void => log('WARN', message, serviceName),
-  error: (message: LogMessage, serviceName?: ServiceName): void => log('ERROR', message, serviceName),
+  info: (message: LogMessage, serviceName?: ServiceName): void =>
+    log('INFO', message, serviceName),
+  warn: (message: LogMessage, serviceName?: ServiceName): void =>
+    log('WARN', message, serviceName),
+  error: (message: LogMessage, serviceName?: ServiceName): void =>
+    log('ERROR', message, serviceName),
 };

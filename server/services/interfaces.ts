@@ -1,4 +1,4 @@
-import { Config } from '../types/index.js';
+import type { Config } from '../types/index.js';
 
 // TTS Service interface
 export interface TTSService {

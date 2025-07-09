@@ -1,7 +1,7 @@
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
+import type { Config } from '../types/index.js';
 import { logger } from '../utils/logger.js';
-import { Config } from '../types/index.js';
 
 export class FileManager {
   private config: Config;
@@ -13,10 +13,10 @@ export class FileManager {
   /**
    * Initialize required directories
    */
-  async initializeDirectories(): Promise<void> {
+  initializeDirectories(): void {
     const directories = [
       this.config.outputDir,
-      path.join(process.cwd(), '../assets')
+      path.join(process.cwd(), '../assets'),
     ];
 
     for (const dir of directories) {
@@ -50,7 +50,7 @@ export class FileManager {
     }
     logger.info(`Verified base audio at ${baseAudioPath}`);
   }
-  
+
   /**
    * Save audio file
    */
@@ -81,7 +81,9 @@ export class FileManager {
         logger.info(`Deleted file: ${filepath}`);
       }
     } catch (error) {
-      logger.error(`Failed to delete file ${filepath}: ${error instanceof Error ? error.message : String(error)}`);
+      logger.error(
+        `Failed to delete file ${filepath}: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 }

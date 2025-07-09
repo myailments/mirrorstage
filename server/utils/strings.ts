@@ -1,6 +1,4 @@
-import zalgo from 'to-zalgo';
-
-function dedent(strings: TemplateStringsArray, ...values: any[]): string {
+function dedent(strings: TemplateStringsArray, ...values: unknown[]): string {
   // TODO: fix dedent fn
   // const fullString = strings[0] + values.map((v, i) => `${v}${strings[i + 1]}`).join('');
   // const lines = fullString.split('\n');
@@ -24,8 +22,13 @@ function dedent(strings: TemplateStringsArray, ...values: any[]): string {
   // return trimmedLines.map(line => line.slice(minIndent)).join('\n');
 
   // Temporary fix — remove all leading whitespace on each line
-  const fullString = strings[0] + values.map((v, i) => `${v}${strings[i + 1]}`).join('');
-  return fullString.split('\n').map(line => line.trimStart()).join('\n').trim();
+  const fullString =
+    strings[0] + values.map((v, i) => `${v}${strings[i + 1]}`).join('');
+  return fullString
+    .split('\n')
+    .map((line) => line.trimStart())
+    .join('\n')
+    .trim();
 }
 
-export { dedent as d, zalgo };
+export { dedent as d };

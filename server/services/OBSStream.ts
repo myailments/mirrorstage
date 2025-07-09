@@ -1,38 +1,43 @@
 // OBS WebSocket service for controlling OBS scenes and sources
-import OBSWebSocket from "obs-websocket-js";
-import { logger as loggerService } from "../utils/logger.ts";
-import { MediaStreamService } from "../types/index.ts";
-import { Config } from "../types/index.ts";
-import path from "path";
-import fs from "fs";
+
+import fs from 'node:fs';
+import path from 'node:path';
+import OBSWebSocket from 'obs-websocket-js';
+import type {
+  Config,
+  OBSMediaEvent,
+  OBSScene,
+  OBSSceneItem,
+} from '../types/index.ts';
+import { logger as loggerService } from '../utils/logger.ts';
 
 const logger = {
   info: (message: string) => {
-    loggerService.info(message, MediaStreamService.OBS);
+    loggerService.info(message, 'OBS');
   },
   warn: (message: string) => {
-    loggerService.warn(message, MediaStreamService.OBS);
+    loggerService.warn(message, 'OBS');
   },
   error: (message: string) => {
-    loggerService.error(message, MediaStreamService.OBS);
+    loggerService.error(message, 'OBS');
   },
 };
 
 export class OBSStream {
   private obs: OBSWebSocket;
   private config: Config;
-  private connected: boolean = false;
+  private connected = false;
   private currentScene: string;
   private pendingVideoQueue: string[] = [];
-  private isTransitioning: boolean = false;
-  private singleSceneName: string = "AI_Stream_Scene";
-  private baseSourceName: string = "Base_Video";
+  private isTransitioning = false;
+  private singleSceneName = 'AI_Stream_Scene';
+  private baseSourceName = 'Base_Video';
   private activeGeneratedSource: string | null = null;
 
   // Vision
   private screenshotInterval: NodeJS.Timeout | null = null;
   private screenshotDirectory: string;
-  private isCapturingScreenshots: boolean = false;
+  private isCapturingScreenshots = false;
   private captureSourceName: string | null = null;
   private screenshotCallbacks: Array<(imagePath: string) => void> = [];
   private captureFrequencyMs: number;
@@ -41,18 +46,22 @@ export class OBSStream {
     this.config = config;
     this.obs = new OBSWebSocket();
     this.currentScene = this.singleSceneName;
-    
+
     // Set capture frequency from config
     this.captureFrequencyMs = (this.config.visionIntervalSeconds || 30) * 1000;
 
     // Ensure screenshot directory is absolute
-    this.screenshotDirectory = path.resolve(path.join(this.config.outputDir, "screenshots"));
+    this.screenshotDirectory = path.resolve(
+      path.join(this.config.outputDir, 'screenshots')
+    );
 
     // Create screenshot directory if it doesn't exist
     if (!fs.existsSync(this.screenshotDirectory)) {
       try {
         fs.mkdirSync(this.screenshotDirectory, { recursive: true });
-        logger.info(`Created screenshot directory at: ${this.screenshotDirectory}`);
+        logger.info(
+          `Created screenshot directory at: ${this.screenshotDirectory}`
+        );
       } catch (error) {
         logger.error(
           `Failed to create screenshot directory: ${
@@ -62,17 +71,17 @@ export class OBSStream {
       }
     }
     // Set up event handlers
-    this.obs.on("ConnectionOpened", () => {
-      logger.info("Connected to OBS WebSocket server");
+    this.obs.on('ConnectionOpened', () => {
+      logger.info('Connected to OBS WebSocket server');
       this.connected = true;
     });
 
-    this.obs.on("ConnectionClosed", () => {
-      logger.info("Disconnected from OBS WebSocket server");
+    this.obs.on('ConnectionClosed', () => {
+      logger.info('Disconnected from OBS WebSocket server');
       this.connected = false;
     });
 
-    this.obs.on("ConnectionError", (err) => {
+    this.obs.on('ConnectionError', (err) => {
       logger.error(`OBS WebSocket connection error: ${err.message}`);
       this.connected = false;
 
@@ -81,23 +90,23 @@ export class OBSStream {
     });
 
     // Add listener for all events to help with debugging
-    this.obs.on("MediaInputPlaybackStarted", (data) => {
+    this.obs.on('MediaInputPlaybackStarted', (data) => {
       logger.info(`Media playback started: ${JSON.stringify(data)}`);
     });
 
-    this.obs.on("MediaInputPlaybackEnded", (data) => {
+    this.obs.on('MediaInputPlaybackEnded', (data) => {
       logger.info(`Media playback ended: ${JSON.stringify(data)}`);
     });
 
     // Also subscribe to raw OBS WebSocket events for debugging
-    this.obs.on("MediaInputActionTriggered", (data) => {
+    this.obs.on('MediaInputActionTriggered', (data) => {
       logger.info(`Media action triggered: ${JSON.stringify(data)}`);
     });
 
-    this.obs.on("CurrentProgramSceneChanged", (data) => {
+    this.obs.on('CurrentProgramSceneChanged', (data) => {
       logger.info(`Scene changed: ${JSON.stringify(data)}`);
       // Update our current scene
-      if (data && data.sceneName) {
+      if (data?.sceneName) {
         this.currentScene = data.sceneName;
       }
     });
@@ -117,12 +126,12 @@ export class OBSStream {
 
       // Connect to OBS WebSocket server with v5 API
       await this.obs.connect(url, obsWebSocketPassword);
-      logger.info("Connected to OBS WebSocket server");
+      logger.info('Connected to OBS WebSocket server');
       this.connected = true;
 
       // Get OBS version information for debugging
       try {
-        const versionInfo = await this.obs.call("GetVersion");
+        const versionInfo = await this.obs.call('GetVersion');
         logger.info(
           `Connected to OBS Studio version ${versionInfo.obsVersion} with WebSocket version ${versionInfo.obsWebSocketVersion}`
         );
@@ -133,8 +142,9 @@ export class OBSStream {
         );
 
         // Check if WebSocket version is compatible (we need v5)
-        const wsVersion = parseInt(
-          versionInfo.obsWebSocketVersion.split(".")[0]
+        const wsVersion = Number.parseInt(
+          versionInfo.obsWebSocketVersion.split('.')[0],
+          10
         );
         if (wsVersion < 5) {
           logger.warn(
@@ -166,12 +176,12 @@ export class OBSStream {
       this.connected = false;
 
       // If error contains specific information about version incompatibility, log it clearly
-      if (error instanceof Error && error.message.includes("socket version")) {
+      if (error instanceof Error && error.message.includes('socket version')) {
         logger.error(
-          "ERROR: OBS WebSocket version incompatibility detected. Please ensure OBS Studio has WebSocket v5.x installed."
+          'ERROR: OBS WebSocket version incompatibility detected. Please ensure OBS Studio has WebSocket v5.x installed.'
         );
         logger.error(
-          "You can download the correct plugin from: https://github.com/obsproject/obs-websocket/releases"
+          'You can download the correct plugin from: https://github.com/obsproject/obs-websocket/releases'
         );
       }
 
@@ -187,55 +197,13 @@ export class OBSStream {
    */
   private async createSceneCollection(): Promise<void> {
     try {
-      const sceneCollectionName = "AI_Streamer";
+      const sceneCollectionName = 'AI_Streamer';
+      const collections = await this.getSceneCollections();
 
-      // Try to get the current collections
-      let collections: string[] = [];
-      try {
-        const result = await this.obs.call("GetSceneCollectionList");
-        collections = result.sceneCollections || [];
-        logger.info(`Found ${collections.length} scene collections in OBS`);
-      } catch (error) {
-        logger.warn(
-          `Could not get scene collections: ${
-            error instanceof Error ? error.message : String(error)
-          }`
-        );
-      }
-
-      // Check if our collection already exists
-      const collectionExists = collections.includes(sceneCollectionName);
-
-      if (!collectionExists) {
-        // Create a new scene collection
-        logger.info(`Creating new scene collection: ${sceneCollectionName}`);
-        try {
-          await this.obs.call("CreateSceneCollection", { sceneCollectionName });
-          logger.info(`New scene collection created: ${sceneCollectionName}`);
-        } catch (error) {
-          logger.error(
-            `Failed to create scene collection: ${
-              error instanceof Error ? error.message : String(error)
-            }`
-          );
-        }
+      if (collections.includes(sceneCollectionName)) {
+        await this.switchToSceneCollection(sceneCollectionName);
       } else {
-        // Switch to existing collection
-        logger.info(
-          `Switching to existing scene collection: ${sceneCollectionName}`
-        );
-        try {
-          await this.obs.call("SetCurrentSceneCollection", {
-            sceneCollectionName,
-          });
-          logger.info(`Switched to scene collection: ${sceneCollectionName}`);
-        } catch (error) {
-          logger.error(
-            `Failed to switch scene collection: ${
-              error instanceof Error ? error.message : String(error)
-            }`
-          );
-        }
+        await this.createNewSceneCollection(sceneCollectionName);
       }
 
       // Wait for scene collection change to complete (OBS needs a moment)
@@ -243,6 +211,56 @@ export class OBSStream {
     } catch (error) {
       logger.error(
         `Error setting up scene collection: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  private async getSceneCollections(): Promise<string[]> {
+    try {
+      const result = await this.obs.call('GetSceneCollectionList');
+      const collections = result.sceneCollections || [];
+      logger.info(`Found ${collections.length} scene collections in OBS`);
+      return collections;
+    } catch (error) {
+      logger.warn(
+        `Could not get scene collections: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+      return [];
+    }
+  }
+
+  private async switchToSceneCollection(
+    sceneCollectionName: string
+  ): Promise<void> {
+    logger.info(
+      `Switching to existing scene collection: ${sceneCollectionName}`
+    );
+    try {
+      await this.obs.call('SetCurrentSceneCollection', { sceneCollectionName });
+      logger.info(`Switched to scene collection: ${sceneCollectionName}`);
+    } catch (error) {
+      logger.error(
+        `Failed to switch scene collection: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  private async createNewSceneCollection(
+    sceneCollectionName: string
+  ): Promise<void> {
+    logger.info(`Creating new scene collection: ${sceneCollectionName}`);
+    try {
+      await this.obs.call('CreateSceneCollection', { sceneCollectionName });
+      logger.info(`New scene collection created: ${sceneCollectionName}`);
+    } catch (error) {
+      logger.error(
+        `Failed to create scene collection: ${
           error instanceof Error ? error.message : String(error)
         }`
       );
@@ -270,7 +288,7 @@ export class OBSStream {
 
       if (!sceneExists) {
         logger.info(`Creating single scene: ${this.singleSceneName}`);
-        await this.obs.call("CreateScene", { sceneName: this.singleSceneName });
+        await this.obs.call('CreateScene', { sceneName: this.singleSceneName });
 
         // Add base video source to the scene
         const baseVideoPath = path.resolve(this.config.baseVideoPath);
@@ -283,7 +301,7 @@ export class OBSStream {
       }
 
       // Switch to our single scene
-      await this.obs.call("SetCurrentProgramScene", {
+      await this.obs.call('SetCurrentProgramScene', {
         sceneName: this.singleSceneName,
       });
 
@@ -301,10 +319,10 @@ export class OBSStream {
   /**
    * Helper method to get scene list
    */
-  private async getSceneList(): Promise<any[]> {
+  private async getSceneList(): Promise<OBSScene[]> {
     try {
-      const result = await this.obs.call("GetSceneList");
-      return result.scenes || [];
+      const result = await this.obs.call('GetSceneList');
+      return (result.scenes || []) as unknown as OBSScene[];
     } catch (error) {
       logger.error(
         `Failed to get scene list: ${
@@ -320,7 +338,7 @@ export class OBSStream {
    */
   async updateGeneratedVideoSource(videoPath: string): Promise<boolean> {
     if (!this.connected) {
-      logger.warn("OBS WebSocket not connected, cannot update video source");
+      logger.warn('OBS WebSocket not connected, cannot update video source');
       return false;
     }
 
@@ -342,17 +360,15 @@ export class OBSStream {
       // Process immediately if not transitioning
       if (!this.isTransitioning && this.pendingVideoQueue.length === 1) {
         await this.playNextVideoInSingleScene();
-      } else {
+      } else if (this.isTransitioning) {
         // Log queue status
-        if (this.isTransitioning) {
-          logger.info(`Already transitioning, video queued for later playback`);
-        } else if (this.pendingVideoQueue.length > 1) {
-          logger.info(
-            `Added to queue, will play after ${
-              this.pendingVideoQueue.length - 1
-            } other videos`
-          );
-        }
+        logger.info('Already transitioning, video queued for later playback');
+      } else if (this.pendingVideoQueue.length > 1) {
+        logger.info(
+          `Added to queue, will play after ${
+            this.pendingVideoQueue.length - 1
+          } other videos`
+        );
       }
 
       return true;
@@ -373,16 +389,16 @@ export class OBSStream {
     if (this.connected) {
       try {
         // Remove all event listeners to prevent memory leaks
-        this.obs.off("ConnectionOpened");
-        this.obs.off("ConnectionClosed");
-        this.obs.off("ConnectionError");
-        this.obs.off("MediaInputPlaybackEnded");
+        this.obs.off('ConnectionOpened');
+        this.obs.off('ConnectionClosed');
+        this.obs.off('ConnectionError');
+        this.obs.off('MediaInputPlaybackEnded');
 
         this.stopScreenshotCapture();
 
         await this.obs.disconnect();
         this.connected = false;
-        logger.info("Disconnected from OBS WebSocket server");
+        logger.info('Disconnected from OBS WebSocket server');
       } catch (error) {
         logger.error(
           `Error disconnecting from OBS: ${
@@ -429,10 +445,10 @@ export class OBSStream {
       );
 
       // Create the new source but set it with visible initially
-      const response = await this.obs.call("CreateInput", {
+      const response = await this.obs.call('CreateInput', {
         sceneName: this.singleSceneName,
         inputName: uniqueSourceName,
-        inputKind: "ffmpeg_source",
+        inputKind: 'ffmpeg_source',
         inputSettings: {
           local_file: absoluteVideoPath,
           looping: false,
@@ -441,9 +457,9 @@ export class OBSStream {
 
       // Set up audio monitoring
       try {
-        await this.obs.call("SetInputAudioMonitorType", {
+        await this.obs.call('SetInputAudioMonitorType', {
           inputName: uniqueSourceName,
-          monitorType: "OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT",
+          monitorType: 'OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT',
         });
         logger.info(`Enabled audio monitoring for: ${uniqueSourceName}`);
       } catch (error) {
@@ -455,7 +471,7 @@ export class OBSStream {
       }
 
       // If we got a valid response with sceneItemId, center the source
-      if (response && response.sceneItemId) {
+      if (response?.sceneItemId) {
         logger.info(
           `Setting up source in scene with sceneItemId: ${response.sceneItemId}`
         );
@@ -469,7 +485,7 @@ export class OBSStream {
         this.activeGeneratedSource = uniqueSourceName;
 
         // Find the base video source to hide it
-        const sourcesList = await this.obs.call("GetSceneItemList", {
+        const sourcesList = await this.obs.call('GetSceneItemList', {
           sceneName: this.singleSceneName,
         });
 
@@ -477,17 +493,17 @@ export class OBSStream {
           (item) => item.sourceName === this.baseSourceName
         );
 
-        if (baseSource && baseSource.sceneItemId) {
+        if (baseSource?.sceneItemId) {
           // Hide the base video
-          await this.obs.call("SetSceneItemEnabled", {
+          await this.obs.call('SetSceneItemEnabled', {
             sceneName: this.singleSceneName,
             sceneItemId: Number(baseSource.sceneItemId),
             sceneItemEnabled: false,
           });
-          logger.info(`Hid base video source to show generated content`);
+          logger.info('Hid base video source to show generated content');
         }
       } else {
-        logger.error(`Could not get sceneItemId for new source, aborting`);
+        logger.error('Could not get sceneItemId for new source, aborting');
         this.isTransitioning = false;
         return;
       }
@@ -495,91 +511,14 @@ export class OBSStream {
       logger.info(`Now playing generated video: ${uniqueSourceName}`);
 
       // Set up a one-time listener for when the generated video ends
-      const mediaEndHandler = async (data: any) => {
+      const mediaEndHandler = async (data: OBSMediaEvent) => {
         if (data.inputName === uniqueSourceName) {
-          logger.info(
-            `Generated video ended: ${uniqueSourceName}, returning to base video`
-          );
-
-          // Add a delay before switching back to base video
-          await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
-
-          // Find the sources again (they might have changed)
-          const currentSourcesList = await this.obs.call("GetSceneItemList", {
-            sceneName: this.singleSceneName,
-          });
-
-          const baseSource = currentSourcesList.sceneItems.find(
-            (item) => item.sourceName === this.baseSourceName
-          );
-
-          // Show base video again
-          if (baseSource && baseSource.sceneItemId) {
-            await this.obs.call("SetSceneItemEnabled", {
-              sceneName: this.singleSceneName,
-              sceneItemId: Number(baseSource.sceneItemId),
-              sceneItemEnabled: true,
-            });
-            logger.info(`Showing base video again`);
-          }
-
-          // Clean up the generated source
-          try {
-            await this.obs.call("RemoveInput", { inputName: uniqueSourceName });
-            logger.info(`Removed completed media source: ${uniqueSourceName}`);
-          } catch (error) {
-            logger.error(
-              `Failed to remove source: ${
-                error instanceof Error ? error.message : String(error)
-              }`
-            );
-          }
-
-          this.activeGeneratedSource = null;
-
-          // Reset the base video if needed
-          try {
-            // Get current position of base video
-            const mediaInfo = await this.obs.call("GetMediaInputStatus", {
-              inputName: this.baseSourceName,
-            });
-            logger.info(
-              `Current base video state: ${JSON.stringify(mediaInfo)}`
-            );
-
-            // Restart base video playback
-            await this.obs.call("TriggerMediaInputAction", {
-              inputName: this.baseSourceName,
-              mediaAction: "OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PLAY",
-            });
-            logger.info(`Resumed base video playback`);
-          } catch (error) {
-            logger.error(
-              `Error resuming base video: ${
-                error instanceof Error ? error.message : String(error)
-              }`
-            );
-          }
-
-          // Release transition lock
-          this.isTransitioning = false;
-
-          // Check for more pending videos
-          if (this.pendingVideoQueue.length > 0) {
-            logger.info(
-              `${this.pendingVideoQueue.length} videos still pending in queue`
-            );
-            // Process next video after a short delay
-            setTimeout(() => this.playNextVideoInSingleScene(), 500);
-          }
-
-          // Remove this specific event listener
-          this.obs.off("MediaInputPlaybackEnded", mediaEndHandler);
+          await this.handleGeneratedVideoEnd(uniqueSourceName, mediaEndHandler);
         }
       };
 
       // Add the event handler
-      this.obs.on("MediaInputPlaybackEnded", mediaEndHandler);
+      this.obs.on('MediaInputPlaybackEnded', mediaEndHandler);
     } catch (error) {
       logger.error(
         `Failed to play video in single scene: ${
@@ -591,22 +530,119 @@ export class OBSStream {
   }
 
   /**
+   * Handle generated video end event
+   */
+  private async handleGeneratedVideoEnd(
+    uniqueSourceName: string,
+    mediaEndHandler: (data: OBSMediaEvent) => Promise<void>
+  ): Promise<void> {
+    logger.info(
+      `Generated video ended: ${uniqueSourceName}, returning to base video`
+    );
+
+    // Add a delay before switching back to base video
+    await new Promise((resolve) => setTimeout(resolve, 1000)); // 1 second delay
+
+    await this.showBaseVideo();
+    await this.cleanupGeneratedSource(uniqueSourceName);
+    await this.resumeBaseVideoPlayback();
+
+    // Release transition lock
+    this.isTransitioning = false;
+
+    // Check for more pending videos
+    if (this.pendingVideoQueue.length > 0) {
+      logger.info(
+        `${this.pendingVideoQueue.length} videos still pending in queue`
+      );
+      // Process next video after a short delay
+      setTimeout(() => this.playNextVideoInSingleScene(), 500);
+    }
+
+    // Remove this specific event listener
+    this.obs.off('MediaInputPlaybackEnded', mediaEndHandler);
+  }
+
+  private async showBaseVideo(): Promise<void> {
+    // Find the sources again (they might have changed)
+    const currentSourcesList = await this.obs.call('GetSceneItemList', {
+      sceneName: this.singleSceneName,
+    });
+
+    const baseSource = (
+      currentSourcesList.sceneItems as unknown as OBSSceneItem[]
+    ).find((item) => item.sourceName === this.baseSourceName);
+
+    // Show base video again
+    if (baseSource?.sceneItemId) {
+      await this.obs.call('SetSceneItemEnabled', {
+        sceneName: this.singleSceneName,
+        sceneItemId: Number(baseSource.sceneItemId),
+        sceneItemEnabled: true,
+      });
+      logger.info('Showing base video again');
+    }
+  }
+
+  private async cleanupGeneratedSource(
+    uniqueSourceName: string
+  ): Promise<void> {
+    try {
+      await this.obs.call('RemoveInput', { inputName: uniqueSourceName });
+      logger.info(`Removed completed media source: ${uniqueSourceName}`);
+    } catch (error) {
+      logger.error(
+        `Failed to remove source: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+    this.activeGeneratedSource = null;
+  }
+
+  private async resumeBaseVideoPlayback(): Promise<void> {
+    try {
+      // Get current position of base video
+      const mediaInfo = await this.obs.call('GetMediaInputStatus', {
+        inputName: this.baseSourceName,
+      });
+      logger.info(`Current base video state: ${JSON.stringify(mediaInfo)}`);
+
+      // Restart base video playback
+      await this.obs.call('TriggerMediaInputAction', {
+        inputName: this.baseSourceName,
+        mediaAction: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PLAY',
+      });
+      logger.info('Resumed base video playback');
+    } catch (error) {
+      logger.error(
+        `Error resuming base video: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  /**
    * Clean up any old generated sources that might be left over
    */
   private async cleanupOldGeneratedSources(): Promise<void> {
     try {
       // Get all inputs
-      const inputList = await this.obs.call("GetInputList");
+      const inputList = await this.obs.call('GetInputList');
 
       // Find and remove any sources that start with 'Generated_'
-      for (const input of inputList.inputs) {
-        const inputName = input.inputName;
-        if (
-          typeof inputName === "string" &&
-          inputName.startsWith("Generated_")
-        ) {
+      const cleanupPromises = inputList.inputs
+        .filter((input) => {
+          const inputName = input.inputName;
+          return (
+            typeof inputName === 'string' && inputName.startsWith('Generated_')
+          );
+        })
+        .map(async (input) => {
+          const inputName = input.inputName as string;
           try {
-            await this.obs.call("RemoveInput", { inputName });
+            await this.obs.call('RemoveInput', { inputName });
             logger.info(`Cleaned up old generated source: ${inputName}`);
           } catch (error) {
             logger.warn(
@@ -615,8 +651,9 @@ export class OBSStream {
               }`
             );
           }
-        }
-      }
+        });
+
+      await Promise.all(cleanupPromises);
     } catch (error) {
       logger.error(
         `Failed to clean up old sources: ${
@@ -631,10 +668,10 @@ export class OBSStream {
    */
   private async setupBaseVideoSource(baseVideoPath: string): Promise<void> {
     try {
-      const response = await this.obs.call("CreateInput", {
+      const response = await this.obs.call('CreateInput', {
         sceneName: this.singleSceneName,
         inputName: this.baseSourceName,
-        inputKind: "ffmpeg_source",
+        inputKind: 'ffmpeg_source',
         inputSettings: {
           local_file: baseVideoPath,
           looping: true,
@@ -642,24 +679,24 @@ export class OBSStream {
       });
 
       // Set up audio monitoring for base video
-      await this.obs.call("SetInputAudioMonitorType", {
+      await this.obs.call('SetInputAudioMonitorType', {
         inputName: this.baseSourceName,
-        monitorType: "OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT",
+        monitorType: 'OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT',
       });
-      logger.info("Enabled audio monitoring for base video");
+      logger.info('Enabled audio monitoring for base video');
 
       if (response.sceneItemId) {
         // Set up initial transform for base video to center it in the scene
         try {
           // Get the canvas size from OBS
-          const videoSettings = await this.obs.call("GetVideoSettings");
+          const videoSettings = await this.obs.call('GetVideoSettings');
           const canvasWidth = videoSettings.baseWidth;
           const canvasHeight = videoSettings.baseHeight;
 
           logger.info(`OBS canvas size: ${canvasWidth}x${canvasHeight}`);
 
           // Create centered transform that fills the canvas while maintaining aspect ratio
-          await this.obs.call("SetSceneItemTransform", {
+          await this.obs.call('SetSceneItemTransform', {
             sceneName: this.singleSceneName,
             sceneItemId: response.sceneItemId,
             sceneItemTransform: {
@@ -667,20 +704,20 @@ export class OBSStream {
               positionX: 0,
               positionY: 0,
               // Maintain aspect ratio
-              boundsType: "OBS_BOUNDS_SCALE_INNER",
+              boundsType: 'OBS_BOUNDS_SCALE_INNER',
               boundsWidth: canvasWidth,
               boundsHeight: canvasHeight,
               // Center alignment
               alignment: 5, // 5 is center (0-8, 0 is top-left, 8 is bottom-right)
               // Set bounds to match canvas
               bounds: {
-                type: "OBS_BOUNDS_SCALE_INNER",
+                type: 'OBS_BOUNDS_SCALE_INNER',
                 x: canvasWidth,
                 y: canvasHeight,
               },
             },
           });
-          logger.info(`Set up initial transform for base video source`);
+          logger.info('Set up initial transform for base video source');
         } catch (error) {
           logger.warn(
             `Failed to set up initial transform: ${
@@ -707,145 +744,23 @@ export class OBSStream {
     toSourceName: string
   ): Promise<void> {
     try {
-      // Get filters from base source
-      const filtersResult = await this.obs.call("GetSourceFilterList", {
-        sourceName: fromSourceName,
-      });
-
-      // Get scene items for both sources
-      const sourcesList = await this.obs.call("GetSceneItemList", {
-        sceneName: this.singleSceneName,
-      });
-
-      const fromSourceItem = sourcesList.sceneItems.find(
-        (item) => item.sourceName === fromSourceName
+      const [fromItem, toItem] = await this.getSourceItems(
+        fromSourceName,
+        toSourceName
       );
 
-      const toSourceItem = sourcesList.sceneItems.find(
-        (item) => item.sourceName === toSourceName
-      );
-
-      if (!fromSourceItem || !toSourceItem) {
-        logger.warn(`Could not find source items to copy properties`);
+      if (!(fromItem && toItem)) {
+        logger.warn('Could not find source items to copy properties');
         return;
       }
 
-      // Copy transform properties (position, size, crop, etc.)
-      if (fromSourceItem.sceneItemId && toSourceItem.sceneItemId) {
-        try {
-          // Get the transform of the base source
-          const sourceTransform = await this.obs.call("GetSceneItemTransform", {
-            sceneName: this.singleSceneName,
-            sceneItemId: Number(fromSourceItem.sceneItemId),
-          });
-
-          // Apply same transform to the generated source
-          await this.obs.call("SetSceneItemTransform", {
-            sceneName: this.singleSceneName,
-            sceneItemId: Number(toSourceItem.sceneItemId),
-            sceneItemTransform: sourceTransform.sceneItemTransform,
-          });
-          logger.info(
-            `Copied transform properties from ${fromSourceName} to ${toSourceName}`
-          );
-        } catch (transformError) {
-          logger.warn(
-            `Failed to copy transform: ${
-              transformError instanceof Error
-                ? transformError.message
-                : String(transformError)
-            }`
-          );
-
-          // Fallback to a basic centered transform if copying fails
-          try {
-            // Get the canvas size from OBS
-            const videoSettings = await this.obs.call("GetVideoSettings");
-            const canvasWidth = videoSettings.baseWidth || 1920;
-            const canvasHeight = videoSettings.baseHeight || 1080;
-
-            await this.obs.call("SetSceneItemTransform", {
-              sceneName: this.singleSceneName,
-              sceneItemId: Number(toSourceItem.sceneItemId),
-              sceneItemTransform: {
-                positionX: 0,
-                positionY: 0,
-                alignment: 5, // Center
-                boundsType: "OBS_BOUNDS_SCALE_INNER",
-                boundsWidth: canvasWidth,
-                boundsHeight: canvasHeight,
-              },
-            });
-            logger.info(
-              `Applied fallback centered transform to ${toSourceName}`
-            );
-          } catch (fallbackError) {
-            logger.error(
-              `Failed to apply fallback transform: ${
-                fallbackError instanceof Error
-                  ? fallbackError.message
-                  : String(fallbackError)
-              }`
-            );
-          }
-        }
-      }
-
-      // Copy filters from base source to generated source
-      if (
-        filtersResult &&
-        filtersResult.filters &&
-        Array.isArray(filtersResult.filters)
-      ) {
-        let copiedFilterCount = 0;
-
-        for (const filter of filtersResult.filters) {
-          // Skip if filter properties are not valid
-          if (!filter.filterName || !filter.filterKind) {
-            continue;
-          }
-
-          const filterName = String(filter.filterName);
-          const filterKind = String(filter.filterKind);
-
-          try {
-            // Get specific filter settings
-            const filterSettings = await this.obs.call("GetSourceFilter", {
-              sourceName: fromSourceName,
-              filterName: filterName,
-            });
-
-            // Create the same filter on the generated source
-            await this.obs.call("CreateSourceFilter", {
-              sourceName: toSourceName,
-              filterName: filterName,
-              filterKind: filterKind,
-              filterSettings: filterSettings.filterSettings || {},
-            });
-
-            // Set same filter enabled state (default to true if not specified)
-            await this.obs.call("SetSourceFilterEnabled", {
-              sourceName: toSourceName,
-              filterName: filterName,
-              filterEnabled: Boolean(filter.filterEnabled),
-            });
-
-            copiedFilterCount++;
-          } catch (filterError) {
-            logger.warn(
-              `Failed to copy filter ${filterName}: ${
-                filterError instanceof Error
-                  ? filterError.message
-                  : String(filterError)
-              }`
-            );
-          }
-        }
-
-        logger.info(
-          `Copied ${copiedFilterCount} filters from ${fromSourceName} to ${toSourceName}`
-        );
-      }
+      await this.copyTransformProperties(
+        fromItem,
+        toItem,
+        fromSourceName,
+        toSourceName
+      );
+      await this.copyFilters(fromSourceName, toSourceName);
     } catch (error) {
       logger.warn(
         `Failed to copy properties: ${
@@ -855,15 +770,157 @@ export class OBSStream {
     }
   }
 
-  // Keeping these methods for backward compatibility, but they're no longer needed
-  async switchToBaseScene(): Promise<boolean> {
-    logger.info("Using single scene approach - no scene switching needed");
-    return true;
+  private async getSourceItems(
+    fromSourceName: string,
+    toSourceName: string
+  ): Promise<[OBSSceneItem | undefined, OBSSceneItem | undefined]> {
+    const sourcesList = await this.obs.call('GetSceneItemList', {
+      sceneName: this.singleSceneName,
+    });
+
+    const sceneItems = sourcesList.sceneItems as unknown as OBSSceneItem[];
+
+    const fromSourceItem = sceneItems.find(
+      (item: OBSSceneItem) => item.sourceName === fromSourceName
+    );
+
+    const toSourceItem = sceneItems.find(
+      (item: OBSSceneItem) => item.sourceName === toSourceName
+    );
+
+    return [fromSourceItem, toSourceItem];
   }
 
-  async switchToGeneratedScene(): Promise<boolean> {
-    logger.info("Using single scene approach - no scene switching needed");
-    return true;
+  private async copyTransformProperties(
+    fromItem: OBSSceneItem,
+    toItem: OBSSceneItem,
+    fromSourceName: string,
+    toSourceName: string
+  ): Promise<void> {
+    if (!(fromItem.sceneItemId && toItem.sceneItemId)) {
+      return;
+    }
+
+    try {
+      const sourceTransform = await this.obs.call('GetSceneItemTransform', {
+        sceneName: this.singleSceneName,
+        sceneItemId: Number(fromItem.sceneItemId),
+      });
+
+      await this.obs.call('SetSceneItemTransform', {
+        sceneName: this.singleSceneName,
+        sceneItemId: Number(toItem.sceneItemId),
+        sceneItemTransform: sourceTransform.sceneItemTransform,
+      });
+
+      logger.info(
+        `Copied transform properties from ${fromSourceName} to ${toSourceName}`
+      );
+    } catch (transformError) {
+      logger.warn(
+        `Failed to copy transform: ${
+          transformError instanceof Error
+            ? transformError.message
+            : String(transformError)
+        }`
+      );
+
+      await this.applyFallbackTransform(toItem, toSourceName);
+    }
+  }
+
+  private async applyFallbackTransform(
+    toItem: OBSSceneItem,
+    toSourceName: string
+  ): Promise<void> {
+    try {
+      const videoSettings = await this.obs.call('GetVideoSettings');
+      const canvasWidth = videoSettings.baseWidth || 1920;
+      const canvasHeight = videoSettings.baseHeight || 1080;
+
+      await this.obs.call('SetSceneItemTransform', {
+        sceneName: this.singleSceneName,
+        sceneItemId: Number(toItem.sceneItemId),
+        sceneItemTransform: {
+          positionX: 0,
+          positionY: 0,
+          alignment: 5, // Center
+          boundsType: 'OBS_BOUNDS_SCALE_INNER',
+          boundsWidth: canvasWidth,
+          boundsHeight: canvasHeight,
+        },
+      });
+
+      logger.info(`Applied fallback centered transform to ${toSourceName}`);
+    } catch (fallbackError) {
+      logger.error(
+        `Failed to apply fallback transform: ${
+          fallbackError instanceof Error
+            ? fallbackError.message
+            : String(fallbackError)
+        }`
+      );
+    }
+  }
+
+  private async copyFilters(
+    fromSourceName: string,
+    toSourceName: string
+  ): Promise<void> {
+    const filtersResult = await this.obs.call('GetSourceFilterList', {
+      sourceName: fromSourceName,
+    });
+
+    if (!(filtersResult?.filters && Array.isArray(filtersResult.filters))) {
+      return;
+    }
+
+    const filterPromises = filtersResult.filters.map(async (filter) => {
+      if (!(filter.filterName && filter.filterKind)) {
+        return false;
+      }
+
+      const filterName = String(filter.filterName);
+      const filterKind = String(filter.filterKind);
+
+      try {
+        const filterSettings = await this.obs.call('GetSourceFilter', {
+          sourceName: fromSourceName,
+          filterName,
+        });
+
+        await this.obs.call('CreateSourceFilter', {
+          sourceName: toSourceName,
+          filterName,
+          filterKind,
+          filterSettings: filterSettings.filterSettings || {},
+        });
+
+        await this.obs.call('SetSourceFilterEnabled', {
+          sourceName: toSourceName,
+          filterName,
+          filterEnabled: Boolean(filter.filterEnabled),
+        });
+
+        return true;
+      } catch (filterError) {
+        logger.warn(
+          `Failed to copy filter ${filterName}: ${
+            filterError instanceof Error
+              ? filterError.message
+              : String(filterError)
+          }`
+        );
+        return false;
+      }
+    });
+
+    const results = await Promise.all(filterPromises);
+    const copiedFilterCount = results.filter(Boolean).length;
+
+    logger.info(
+      `Copied ${copiedFilterCount} filters from ${fromSourceName} to ${toSourceName}`
+    );
   }
 
   // Vision
@@ -879,25 +936,27 @@ export class OBSStream {
   ): Promise<boolean> {
     try {
       if (!this.connected) {
-        throw new Error("Not connected to OBS");
+        throw new Error('Not connected to OBS');
       }
 
       // Verify the source exists
-      const { scenes } = await this.obs.call("GetSceneList");
+      const { scenes } = await this.obs.call('GetSceneList');
 
-      const currentScene = scenes.find((scene: any) => scene.sceneName === this.currentScene);
-      
+      const currentScene = (scenes as unknown as OBSScene[]).find(
+        (scene: OBSScene) => scene.sceneName === this.currentScene
+      );
+
       if (!currentScene) {
         throw new Error(`Current scene "${this.currentScene}" not found`);
       }
 
-      const sources = await this.obs.call("GetSceneItemList", {
-        sceneName: this.currentScene
+      const sources = await this.obs.call('GetSceneItemList', {
+        sceneName: this.currentScene,
       });
 
-      const sourceExists = sources.sceneItems.some((item: any) => 
-        item.sourceName === sourceName
-      );
+      const sourceExists = (
+        sources.sceneItems as unknown as OBSSceneItem[]
+      ).some((item: OBSSceneItem) => item.sourceName === sourceName);
 
       if (!sourceExists) {
         throw new Error(`Source "${sourceName}" not found in current scene`);
@@ -908,7 +967,7 @@ export class OBSStream {
 
       this.isCapturingScreenshots = true;
       this.captureSourceName = sourceName;
-      
+
       // Use provided frequency if specified, otherwise use the one from config
       if (frequencyMs !== undefined) {
         this.captureFrequencyMs = frequencyMs;
@@ -918,12 +977,16 @@ export class OBSStream {
       if (this.screenshotInterval) {
         clearInterval(this.screenshotInterval);
       }
-      
+
       // Create an interval to capture screenshots
       // Add debug logging to track interval creation
-      logger.info(`Setting up screenshot interval with frequency ${this.captureFrequencyMs}ms`);
+      logger.info(
+        `Setting up screenshot interval with frequency ${this.captureFrequencyMs}ms`
+      );
       this.screenshotInterval = setInterval(() => {
-        logger.info(`Scheduled screenshot capture triggered at ${new Date().toISOString()}`);
+        logger.info(
+          `Scheduled screenshot capture triggered at ${new Date().toISOString()}`
+        );
         this.captureScreenshot().catch((error) => {
           logger.error(
             `Error capturing screenshot: ${
@@ -939,7 +1002,9 @@ export class OBSStream {
 
       // Only capture one immediately if we're not using the interval system
       // This prevents multiple screenshot sequences from starting
-      logger.info(`Initial setup complete. First screenshot will be captured when interval triggers.`);
+      logger.info(
+        'Initial setup complete. First screenshot will be captured when interval triggers.'
+      );
 
       return true;
     } catch (error) {
@@ -957,14 +1022,14 @@ export class OBSStream {
    */
   stopScreenshotCapture(): void {
     if (this.screenshotInterval) {
-      logger.info("Clearing existing screenshot capture interval");
+      logger.info('Clearing existing screenshot capture interval');
       clearInterval(this.screenshotInterval);
       this.screenshotInterval = null;
     }
 
     this.isCapturingScreenshots = false;
     this.captureSourceName = null;
-    logger.info("Stopped screenshot capture");
+    logger.info('Stopped screenshot capture');
   }
 
   /**
@@ -973,7 +1038,7 @@ export class OBSStream {
    */
   onScreenshotCaptured(callback: (imagePath: string) => void): void {
     this.screenshotCallbacks.push(callback);
-    logger.info("Registered new screenshot callback");
+    logger.info('Registered new screenshot callback');
   }
 
   /**
@@ -984,7 +1049,7 @@ export class OBSStream {
     const index = this.screenshotCallbacks.indexOf(callback);
     if (index !== -1) {
       this.screenshotCallbacks.splice(index, 1);
-      logger.info("Removed screenshot callback");
+      logger.info('Removed screenshot callback');
     }
   }
 
@@ -993,28 +1058,32 @@ export class OBSStream {
    * @returns Promise resolving to the path of the captured screenshot
    */
   private async captureScreenshot(): Promise<string> {
-    if (!this.connected || !this.captureSourceName) {
-      throw new Error("Not connected to OBS or no capture source configured");
+    if (!(this.connected && this.captureSourceName)) {
+      throw new Error('Not connected to OBS or no capture source configured');
     }
 
     try {
       // Double-check screenshot directory exists and create if needed
       if (!fs.existsSync(this.screenshotDirectory)) {
         fs.mkdirSync(this.screenshotDirectory, { recursive: true });
-        logger.info(`Created screenshot directory at: ${this.screenshotDirectory}`);
+        logger.info(
+          `Created screenshot directory at: ${this.screenshotDirectory}`
+        );
       }
 
       // Generate filename based on timestamp
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const filename = `${this.captureSourceName}_${timestamp}.png`;
-      const outputPath = path.resolve(path.join(this.screenshotDirectory, filename));
+      const outputPath = path.resolve(
+        path.join(this.screenshotDirectory, filename)
+      );
       logger.info(`Attempting to save screenshot to: ${outputPath}`);
 
       // Take the screenshot
-      await this.obs.call("SaveSourceScreenshot", {
+      await this.obs.call('SaveSourceScreenshot', {
         sourceName: this.captureSourceName,
-        imageFormat: "png",
-        imageFilePath: outputPath
+        imageFormat: 'png',
+        imageFilePath: outputPath,
       });
 
       // Verify the screenshot was created
@@ -1027,7 +1096,7 @@ export class OBSStream {
       );
 
       // Notify callbacks
-      this.screenshotCallbacks.forEach((callback) => {
+      for (const callback of this.screenshotCallbacks) {
         try {
           callback(outputPath);
         } catch (callbackError) {
@@ -1039,7 +1108,7 @@ export class OBSStream {
             }`
           );
         }
-      });
+      }
 
       return outputPath;
     } catch (error) {
@@ -1083,14 +1152,14 @@ export class OBSStream {
   }
 
   // This is no longer used, but keeping for backward compatibility
-  private async playNextPendingVideo(): Promise<void> {
+  private playNextPendingVideo(): Promise<void> {
     return this.playNextVideoInSingleScene();
   }
 
   // No longer used, but keeping for backward compatibility
   private async processAndPlayGeneratedVideo(videoPath: string): Promise<void> {
     logger.info(
-      "Using single scene approach - redirecting to playNextVideoInSingleScene"
+      'Using single scene approach - redirecting to playNextVideoInSingleScene'
     );
     // Just redirect to the new method
     this.pendingVideoQueue.unshift(videoPath);

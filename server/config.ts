@@ -1,9 +1,14 @@
 // Configuration handler
+
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { Config } from './types/index.js';
-import { LLMService, TTSService, VideoSyncService, MediaStreamService } from './types/index.js';
+import {
+  type Config,
+  LLMService,
+  TTSService,
+  VideoSyncService,
+} from './types/index.js';
 
 // Get the directory name of the current module
 const __filename = fileURLToPath(import.meta.url);
@@ -14,34 +19,42 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 // Service selection logic
 const getLLMService = (): LLMService => {
-  if (process.env.USE_OPENROUTER === 'true') return LLMService.OPENROUTER;
-  if (process.env.USE_CLOUDY_API === 'true') return LLMService.CLOUDY;
+  if (process.env.USE_OPENROUTER === 'true') {
+    return LLMService.OPENROUTER;
+  }
+  if (process.env.USE_CLOUDY_API === 'true') {
+    return LLMService.CLOUDY;
+  }
   return LLMService.OPENAI; // default
 };
 
 const getTTSService = (): TTSService => {
-  if (process.env.USE_ZONOS_TTS_LOCAL === 'true') return TTSService.ZONOS_LOCAL;
-  if (process.env.USE_ZONOS_TTS_API === 'true') return TTSService.ZONOS_API;
-  if (process.env.USE_ELEVENLABS === 'true') return TTSService.ELEVENLABS;
+  if (process.env.USE_ZONOS_TTS_LOCAL === 'true') {
+    return TTSService.ZONOS_LOCAL;
+  }
+  if (process.env.USE_ZONOS_TTS_API === 'true') {
+    return TTSService.ZONOS_API;
+  }
+  if (process.env.USE_ELEVENLABS === 'true') {
+    return TTSService.ELEVENLABS;
+  }
   return TTSService.ZONOS_LOCAL; // default
 };
 
 const getVideoSyncService = (): VideoSyncService => {
-  if (process.env.USE_FAL_LATENT_SYNC === 'true') return VideoSyncService.FAL;
-  if (process.env.USE_SYNC_LABS === 'true') return VideoSyncService.SYNC_LABS;
+  if (process.env.USE_FAL_LATENT_SYNC === 'true') {
+    return VideoSyncService.FAL;
+  }
+  if (process.env.USE_SYNC_LABS === 'true') {
+    return VideoSyncService.SYNC_LABS;
+  }
   return VideoSyncService.LOCAL; // default
-};
-
-const getMediaStreamService = (): MediaStreamService => {
-  if (process.env.USE_OBS === 'true') return MediaStreamService.OBS;
-  return MediaStreamService.CLIENT; // default
 };
 
 const selectedServices = {
   llm: getLLMService(),
   tts: getTTSService(),
   videoSync: getVideoSyncService(),
-  mediaStream: getMediaStreamService()
 };
 
 const config: Config = {
@@ -56,15 +69,19 @@ const config: Config = {
   baseAudioPath: process.env.BASE_AUDIO_PATH || './assets/base_audio.wav',
 
   // Queue configuration
-  minQueueSize: parseInt(process.env.MIN_QUEUE_SIZE || '3', 10),
-  maxQueueSize: parseInt(process.env.MAX_QUEUE_SIZE || '10', 10),
-
+  minQueueSize: Number.parseInt(process.env.MIN_QUEUE_SIZE || '3', 10),
+  maxQueueSize: Number.parseInt(process.env.MAX_QUEUE_SIZE || '10', 10),
+  maxConcurrent: Number.parseInt(process.env.MAX_CONCURRENT || '4', 10),
+  minPriority: Number.parseInt(process.env.MIN_PRIORITY || '0', 10),
   // Text Generation (LLM) Configuration
   // OpenRouter
   useOpenRouter: selectedServices.llm === LLMService.OPENROUTER,
   openRouterApiKey: process.env.OPENROUTER_API_KEY,
-  openRouterGenerationModel: process.env.OPENROUTER_GENERATION_MODEL || 'deepseek/deepseek-chat-v3-0324:free',
-  openRouterEvaluationModel: process.env.OPENROUTER_EVALUATION_MODEL || 'openai/gpt-4o-mini',
+  openRouterGenerationModel:
+    process.env.OPENROUTER_GENERATION_MODEL ||
+    'deepseek/deepseek-chat-v3-0324:free',
+  openRouterEvaluationModel:
+    process.env.OPENROUTER_EVALUATION_MODEL || 'openai/gpt-4o-mini',
   openRouterSiteUrl: process.env.OPENROUTER_SITE_URL,
   openRouterSiteName: process.env.OPENROUTER_SITE_NAME,
   // OpenAI
@@ -102,7 +119,6 @@ const config: Config = {
   syncLabsKey: process.env.SYNC_LABS_KEY,
 
   // OBS WebSocket configuration
-  useOBS: selectedServices.mediaStream === MediaStreamService.OBS,
   obsWebSocketHost: process.env.OBS_WEBSOCKET_HOST || 'localhost',
   obsWebSocketPort: Number(process.env.OBS_WEBSOCKET_PORT) || 4455,
   obsWebSocketPassword: process.env.OBS_WEBSOCKET_PASSWORD,
@@ -122,34 +138,48 @@ const config: Config = {
   awsAccessKeyId: process.env.AWS_ACCESS_KEY_ID,
   awsSecretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   awsBucketName: process.env.AWS_BUCKET_NAME,
-  
+
   // Vision configuration
   useVision: process.env.USE_VISION === 'true',
   visionSourceName: process.env.VISION_SOURCE_NAME || 'Display Capture',
-  visionIntervalSeconds: parseInt(process.env.VISION_INTERVAL_SECONDS || '30', 10),
-  visionPrompt: process.env.VISION_PROMPT || 'You are analyzing a livestream. What is happening in this image?',
+  visionIntervalSeconds: Number.parseInt(
+    process.env.VISION_INTERVAL_SECONDS || '30',
+    10
+  ),
+  visionPrompt:
+    process.env.VISION_PROMPT ||
+    'You are analyzing a livestream. What is happening in this image?',
 };
 
 // Validate configuration
-const validateConfig = (config: Config) => {
+const validateConfig = (cfg: Config) => {
   // Ensure LLM service has required credentials
-  if (config.selectedServices.llm === LLMService.OPENROUTER && !config.openRouterApiKey) {
+  if (
+    cfg.selectedServices.llm === LLMService.OPENROUTER &&
+    !cfg.openRouterApiKey
+  ) {
     throw new Error('OpenRouter API key is required when using OpenRouter');
   }
-  if (config.selectedServices.llm === LLMService.OPENAI && !config.openaiApiKey) {
+  if (cfg.selectedServices.llm === LLMService.OPENAI && !cfg.openaiApiKey) {
     throw new Error('OpenAI API key is required when using OpenAI');
   }
 
   // Ensure TTS service has required credentials
-  if (config.selectedServices.tts === TTSService.ZONOS_API && !config.zonosApiKey) {
+  if (cfg.selectedServices.tts === TTSService.ZONOS_API && !cfg.zonosApiKey) {
     throw new Error('Zonos API key is required when using Zonos API');
   }
-  if (config.selectedServices.tts === TTSService.ELEVENLABS && !config.elevenLabsApiKey) {
+  if (
+    cfg.selectedServices.tts === TTSService.ELEVENLABS &&
+    !cfg.elevenLabsApiKey
+  ) {
     throw new Error('ElevenLabs API key is required when using ElevenLabs');
   }
 
   // Ensure Video Sync service has required credentials
-  if (config.selectedServices.videoSync === VideoSyncService.FAL && !config.falApiKey) {
+  if (
+    cfg.selectedServices.videoSync === VideoSyncService.FAL &&
+    !cfg.falApiKey
+  ) {
     throw new Error('FAL API key is required when using FAL LatentSync');
   }
 };

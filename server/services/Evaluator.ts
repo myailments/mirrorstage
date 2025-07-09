@@ -1,8 +1,8 @@
-import { z } from "zod";
-import { zodResponseFormat } from "openai/helpers/zod";
-import { logger } from "../utils/logger.js";
-import { OpenAI } from "openai";
-import { Config, PipelineItem } from "../types/index.js";
+import { OpenAI } from 'openai';
+import { zodResponseFormat } from 'openai/helpers/zod';
+import { z } from 'zod';
+import type { Config, PipelineItem } from '../types/index.js';
+import { logger } from '../utils/logger.js';
 
 // Define the evaluation schema
 const evaluationSchema = z.object({
@@ -24,7 +24,7 @@ export interface EvaluatedMessage {
   timestamp: string;
   priority: number;
   reason: string;
-  [key: string]: any; // Allow other properties from the original item
+  [key: string]: unknown; // Allow other properties from the original item
 }
 
 export class MessageEvaluator {
@@ -36,7 +36,7 @@ export class MessageEvaluator {
 
   constructor(config: Config) {
     this.config = config;
-    this.useOpenRouter = config.useOpenRouter || false;
+    this.useOpenRouter = config.useOpenRouter;
 
     if (!this.useOpenRouter) {
       this.openai = new OpenAI({
@@ -46,15 +46,14 @@ export class MessageEvaluator {
 
     if (this.useOpenRouter) {
       this.openRouter = new OpenAI({
-        baseURL: "https://openrouter.ai/api/v1",
+        baseURL: 'https://openrouter.ai/api/v1',
         apiKey: this.config.openRouterApiKey,
         defaultHeaders: {
-          "HTTP-Referer": this.config.openRouterSiteUrl || "",
-          "X-Title": this.config.openRouterSiteName || "",
+          'HTTP-Referer': this.config.openRouterSiteUrl || '',
+          'X-Title': this.config.openRouterSiteName || '',
         },
       });
     }
-
 
     this.schema = evaluationSchema;
   }
@@ -77,15 +76,10 @@ Evaluate chat messages and assign priority scores from 0-10 where:
     )}`;
 
     try {
-     if (this.useOpenRouter) {
-        return await this.evaluateWithOpenRouter(
-          inputs,
-          systemPrompt,
-          userPrompt
-        );
-      } else {
-        return await this.evaluateWithOpenAI(inputs, systemPrompt, userPrompt);
+      if (this.useOpenRouter) {
+        return await this.evaluateWithOpenRouter(systemPrompt, userPrompt);
       }
+      return await this.evaluateWithOpenAI(systemPrompt, userPrompt);
     } catch (error) {
       logger.error(
         `Evaluation error: ${
@@ -97,34 +91,33 @@ Evaluate chat messages and assign priority scores from 0-10 where:
         userId: input.userId,
         message: input.message,
         priority: 5,
-        reason: "Default priority due to evaluation error",
+        reason: 'Default priority due to evaluation error',
         timestamp: input.timestamp.toString(),
       })) as EvaluatedMessage[];
     }
   }
 
   private async evaluateWithOpenAI(
-    inputs: PipelineItem[],
     systemPrompt: string,
     userPrompt: string
   ): Promise<EvaluatedMessage[]> {
     if (!this.openai) {
-      throw new Error("OpenAI client not initialized");
+      throw new Error('OpenAI client not initialized');
     }
 
     const completion = await this.openai.beta.chat.completions.parse({
-      model: "gpt-4o-mini",
+      model: 'gpt-4o-mini',
       messages: [
         {
-          role: "system",
+          role: 'system',
           content: systemPrompt,
         },
         {
-          role: "user",
+          role: 'user',
           content: userPrompt,
         },
       ],
-      response_format: zodResponseFormat(this.schema, "evaluatedMessages"),
+      response_format: zodResponseFormat(this.schema, 'evaluatedMessages'),
     });
 
     const evaluatedMessages =
@@ -133,15 +126,14 @@ Evaluate chat messages and assign priority scores from 0-10 where:
   }
 
   private async evaluateWithOpenRouter(
-    inputs: PipelineItem[],
     systemPrompt: string,
     userPrompt: string
   ): Promise<EvaluatedMessage[]> {
     if (!this.openRouter) {
-      throw new Error("OpenRouter client not initialized");
+      throw new Error('OpenRouter client not initialized');
     }
 
-    const model = this.config.openRouterEvaluationModel || "openai/gpt-4o-mini";
+    const model = this.config.openRouterEvaluationModel || 'openai/gpt-4o-mini';
 
     const jsonSystemPrompt = `${systemPrompt}
 
@@ -159,37 +151,43 @@ The response should start with [ and end with ]. Example:
 
     try {
       const completion = await this.openRouter.chat.completions.create({
-        model: model,
+        model,
         messages: [
           {
-            role: "system",
+            role: 'system',
             content: jsonSystemPrompt,
           },
           {
-            role: "user",
-            content: userPrompt
+            role: 'user',
+            content: userPrompt,
           },
         ],
         max_tokens: 1000,
-        response_format: { type: "json_object" }
+        response_format: { type: 'json_object' },
       });
 
       const content = completion.choices[0]?.message?.content?.trim();
       if (!content) {
-        throw new Error("Empty response from OpenRouter");
+        throw new Error('Empty response from OpenRouter');
       }
       // Clean the response of any potential markdown or code block formatting
-      const cleanedContent = content.replace(/```(?:json)?\s*|\s*```/g, '').trim();
-      
+      const cleanedContent = content
+        .replace(/```(?:json)?\s*|\s*```/g, '')
+        .trim();
+
       try {
         const parsedResponse = JSON.parse(cleanedContent);
         return parsedResponse;
       } catch (parseError) {
-        logger.error(`Failed to parse OpenRouter JSON response: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
+        logger.error(
+          `Failed to parse OpenRouter JSON response: ${parseError instanceof Error ? parseError.message : String(parseError)}`
+        );
         throw parseError;
       }
     } catch (error) {
-      logger.error(`OpenRouter API error: ${error instanceof Error ? error.message : String(error)}`);
+      logger.error(
+        `OpenRouter API error: ${error instanceof Error ? error.message : String(error)}`
+      );
       throw error;
     }
   }
@@ -197,12 +195,14 @@ The response should start with [ and end with ]. Example:
 
 // Test evaluator
 export class TestMessageEvaluator extends MessageEvaluator {
-  async evaluateInputs(inputs: PipelineItem[]): Promise<EvaluatedMessage[]> {
-    return inputs.map((input) => ({
-      ...input,
-      priority: 5,
-      reason: "Test priority",
-      timestamp: input.timestamp.toString(),
-    })) as EvaluatedMessage[];
+  evaluateInputs(inputs: PipelineItem[]): Promise<EvaluatedMessage[]> {
+    return Promise.resolve(
+      inputs.map((input) => ({
+        ...input,
+        priority: 5,
+        reason: 'Test priority',
+        timestamp: input.timestamp.toString(),
+      })) as EvaluatedMessage[]
+    );
   }
 }

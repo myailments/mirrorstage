@@ -1,35 +1,36 @@
 // Core types for the application
 
 // Service type enums
-export enum LLMService {
-  OPENROUTER = 'openrouter',
-  CLOUDY = 'cloudy',
-  OPENAI = 'openai'
-}
+export const LLMService = {
+  OPENROUTER: 'openrouter',
+  CLOUDY: 'cloudy',
+  OPENAI: 'openai',
+} as const;
 
-export enum TTSService {
-  ZONOS_LOCAL = 'zonos-local',
-  ZONOS_API = 'zonos-api',
-  ELEVENLABS = 'elevenlabs'
-}
+export type LLMService = (typeof LLMService)[keyof typeof LLMService];
 
-export enum VideoSyncService {
-  LOCAL = 'local',
-  FAL = 'fal',
-  SYNC_LABS = 'sync-labs'
-}
+export const TTSService = {
+  ZONOS_LOCAL: 'zonos-local',
+  ZONOS_API: 'zonos-api',
+  ELEVENLABS: 'elevenlabs',
+} as const;
 
-export enum MediaStreamService {
-  CLIENT = 'client',
-  OBS = 'obs'
-}
+export type TTSService = (typeof TTSService)[keyof typeof TTSService];
+
+export const VideoSyncService = {
+  LOCAL: 'local',
+  FAL: 'fal',
+  SYNC_LABS: 'sync-labs',
+} as const;
+
+export type VideoSyncService =
+  (typeof VideoSyncService)[keyof typeof VideoSyncService];
 
 // Selected services configuration
 export interface SelectedServices {
   llm: LLMService;
   tts: TTSService;
   videoSync: VideoSyncService;
-  mediaStream: MediaStreamService;
 }
 
 // Configuration type
@@ -47,10 +48,10 @@ export interface Config {
   // Queue configuration
   minQueueSize: number;
   maxQueueSize: number;
-  maxConcurrent?: number;
-  minPriority?: number;
+  maxConcurrent: number;
+  minPriority: number;
   checkInterval?: number;
-  
+
   // Vision configuration
   useVision?: boolean;
   visionSourceName?: string;
@@ -68,7 +69,6 @@ export interface Config {
   openRouterEvaluationModel?: string;
   openRouterSiteUrl?: string;
   openRouterSiteName?: string;
-
 
   // OpenAI
   openaiApiKey?: string;
@@ -106,7 +106,6 @@ export interface Config {
 
   // Media Stream Configuration
   // OBS WebSocket
-  useOBS: boolean;
   obsWebSocketHost: string;
   obsWebSocketPort: number;
   obsWebSocketPassword?: string;
@@ -128,16 +127,19 @@ export interface Config {
 }
 
 // Pipeline Item Status
-export enum PipelineStatus {
-  RECEIVED = 'received',
-  EVALUATING = 'evaluating',
-  REJECTED = 'rejected',
-  GENERATING_RESPONSE = 'generating_response',
-  GENERATING_SPEECH = 'generating_speech',
-  GENERATING_VIDEO = 'generating_video',
-  COMPLETED = 'completed',
-  FAILED = 'failed'
-}
+export const PipelineStatus = {
+  RECEIVED: 'received',
+  EVALUATING: 'evaluating',
+  REJECTED: 'rejected',
+  GENERATING_RESPONSE: 'generating_response',
+  GENERATING_SPEECH: 'generating_speech',
+  GENERATING_VIDEO: 'generating_video',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+} as const;
+
+export type PipelineStatus =
+  (typeof PipelineStatus)[keyof typeof PipelineStatus];
 
 // Status update
 export interface StatusUpdate {
@@ -189,14 +191,16 @@ export interface InputResponse {
   status: PipelineStatus;
 }
 
-
 // Stream analysis types
 
-export enum StreamAnalysisService {
-  GPT_VISION = 'gpt-vision',
-  CLAUDE = 'claude',
-  GOOGLE_VISION = 'google-vision'
-}
+export const StreamAnalysisService = {
+  GPT_VISION: 'gpt-vision',
+  CLAUDE: 'claude',
+  GOOGLE_VISION: 'google-vision',
+} as const;
+
+export type StreamAnalysisService =
+  (typeof StreamAnalysisService)[keyof typeof StreamAnalysisService];
 
 export interface StreamAnalysisResult {
   timestamp: string;
@@ -230,4 +234,23 @@ export interface StreamAnalysisConfig {
   analysisPrompt: string;
   saveScreenshots: boolean;
   maxStoredScreenshots: number;
+}
+
+// OBS-related types for better type safety
+export interface OBSScene {
+  sceneName: string;
+  sceneUuid: string;
+  sceneIndex: number;
+}
+
+export interface OBSSceneItem {
+  sceneItemId: number;
+  sourceName: string;
+  sceneItemIndex: number;
+  sceneItemEnabled: boolean;
+}
+
+export interface OBSMediaEvent {
+  inputName: string;
+  inputUuid: string;
 }
