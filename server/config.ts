@@ -43,10 +43,13 @@ const getTTSService = (): TTSService => {
 
 const getVideoSyncService = (): VideoSyncService => {
   if (process.env.USE_FAL_LATENT_SYNC === 'true') {
-    return VideoSyncService.FAL;
+    return VideoSyncService.FAL_LATENT_SYNC;
   }
   if (process.env.USE_SYNC_LABS === 'true') {
     return VideoSyncService.SYNC_LABS;
+  }
+  if (process.env.USE_FAL_PIXVERSE === 'true') {
+    return VideoSyncService.FAL_PIXVERSE;
   }
   return VideoSyncService.LOCAL; // default
 };
@@ -111,8 +114,12 @@ const config: Config = {
   latentSyncPort: Number(process.env.LATENTSYNC_PORT) || 8002,
 
   // FAL API LatentSync
-  useFalLatentSync: selectedServices.videoSync === VideoSyncService.FAL,
+  useFalLatentSync:
+    selectedServices.videoSync === VideoSyncService.FAL_LATENT_SYNC,
   falApiKey: process.env.FAL_KEY,
+
+  // FAL API Pixverse
+  useFalPixverse: selectedServices.videoSync === VideoSyncService.FAL_PIXVERSE,
 
   // Sync Labs
   useSyncLabs: selectedServices.videoSync === VideoSyncService.SYNC_LABS,
@@ -177,10 +184,16 @@ const validateConfig = (cfg: Config) => {
 
   // Ensure Video Sync service has required credentials
   if (
-    cfg.selectedServices.videoSync === VideoSyncService.FAL &&
+    cfg.selectedServices.videoSync === VideoSyncService.FAL_LATENT_SYNC &&
     !cfg.falApiKey
   ) {
     throw new Error('FAL API key is required when using FAL LatentSync');
+  }
+  if (
+    cfg.selectedServices.videoSync === VideoSyncService.FAL_PIXVERSE &&
+    !cfg.falApiKey
+  ) {
+    throw new Error('FAL API key is required when using FAL Pixverse');
   }
 };
 

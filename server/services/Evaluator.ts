@@ -135,19 +135,22 @@ Evaluate chat messages and assign priority scores from 0-10 where:
 
     const model = this.config.openRouterEvaluationModel || 'openai/gpt-4o-mini';
 
+    // Update the system prompt to match the expected schema structure
     const jsonSystemPrompt = `${systemPrompt}
 
-IMPORTANT: You must respond with a raw JSON array only. Do not include any markdown formatting, code blocks, or additional text.
-The response should start with [ and end with ]. Example:
-[
-  {
-    "userId": "user123",
-    "message": "original message",
-    "timestamp": "2024-03-20T10:00:00Z",
-    "priority": 5,
-    "reason": "explanation"
-  }
-]`;
+IMPORTANT: You must respond with a valid JSON object containing an "evaluatedMessages" array. Do not include any markdown formatting, code blocks, or additional text.
+The response must have this exact structure:
+{
+  "evaluatedMessages": [
+    {
+      "userId": "string",
+      "message": "string", 
+      "timestamp": "string",
+      "priority": number,
+      "reason": "string"
+    }
+  ]
+}`;
 
     try {
       const completion = await this.openRouter.chat.completions.create({
@@ -170,6 +173,7 @@ The response should start with [ and end with ]. Example:
       if (!content) {
         throw new Error('Empty response from OpenRouter');
       }
+
       // Clean the response of any potential markdown or code block formatting
       const cleanedContent = content
         .replace(/```(?:json)?\s*|\s*```/g, '')
@@ -177,11 +181,21 @@ The response should start with [ and end with ]. Example:
 
       try {
         const parsedResponse = JSON.parse(cleanedContent);
-        return parsedResponse;
+
+        // Validate the response using the existing zod schema
+        const validatedResponse = this.schema.parse(parsedResponse);
+
+        logger.info(
+          `Validated OpenRouter response: ${JSON.stringify(validatedResponse.evaluatedMessages)}`
+        );
+
+        // Return the validated evaluatedMessages array
+        return validatedResponse.evaluatedMessages as EvaluatedMessage[];
       } catch (parseError) {
         logger.error(
-          `Failed to parse OpenRouter JSON response: ${parseError instanceof Error ? parseError.message : String(parseError)}`
+          `Failed to parse or validate OpenRouter JSON response: ${parseError instanceof Error ? parseError.message : String(parseError)}`
         );
+        logger.error(`Raw response: ${cleanedContent}`);
         throw parseError;
       }
     } catch (error) {

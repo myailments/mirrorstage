@@ -915,10 +915,10 @@
   resolved "https://registry.yarnpkg.com/@esbuild/win32-x64/-/win32-x64-0.25.6.tgz#4276edd5c105bc28b11c6a1f76fb9d29d1bd25c1"
   integrity sha512-NgJPHHbEpLQgDH2MjQu90pzW/5vvXIZ7KOnPyNBm92A6WgZ/7b6fJyUBjoumLqeOQQGqY2QjQxRo97ah4Sj0cA==
 
-"@fal-ai/client@^1.2.3":
-  version "1.2.3"
-  resolved "https://registry.npmjs.org/@fal-ai/client/-/client-1.2.3.tgz"
-  integrity sha512-Lf37bJN16ssbaHYPSWDVCRspdTubcZvugyemEEtm6frhi83f9J+FJuq9uiY9WfR5bskQ8CZhBYhD9irZOPxY5Q==
+"@fal-ai/client@^1.5.0":
+  version "1.5.0"
+  resolved "https://registry.yarnpkg.com/@fal-ai/client/-/client-1.5.0.tgz#a8babdbd8188e27c73c8886da95ee6d861df4b78"
+  integrity sha512-e0WtcbSjbwKFCOwAex3lRDba1iMY42QAwLZuae7oc5xNav2+HdprE9QWYdsDS3nyr0GOttEpUgsBa/c/AKAguA==
   dependencies:
     "@msgpack/msgpack" "^3.0.0-beta2"
     eventsource-parser "^1.1.2"
@@ -953,9 +953,9 @@
   integrity sha512-h9u4u/jiIRKbq25PM+zymTyW6bhTzELvOoUd+AvYriWOAKpLGnIamaET3pnHYoI5iYphAHBI4ayx0MehR+VVPQ==
 
 "@msgpack/msgpack@^3.0.0-beta2":
-  version "3.1.1"
-  resolved "https://registry.npmjs.org/@msgpack/msgpack/-/msgpack-3.1.1.tgz"
-  integrity sha512-DnBpqkMOUGayNVKyTLlkM6ILmU/m/+VUxGkuQlPQVAcvreLz5jn1OlQnWd8uHKL/ZSiljpM12rjRhr51VtvJUQ==
+  version "3.1.2"
+  resolved "https://registry.yarnpkg.com/@msgpack/msgpack/-/msgpack-3.1.2.tgz#fdd25cc2202297519798bbaf4689152ad9609e19"
+  integrity sha512-JEW4DEtBzfe8HvUYecLU9e6+XJnKDlUAIve8FvPzF3Kzs6Xo/KuZkZJsDH0wJXl/qEZbeeE7edxDNY3kMs39hQ==
 
 "@rollup/rollup-android-arm-eabi@4.44.2":
   version "4.44.2"
@@ -2247,7 +2247,7 @@ eventemitter3@^5.0.1:
 
 eventsource-parser@^1.1.2:
   version "1.1.2"
-  resolved "https://registry.npmjs.org/eventsource-parser/-/eventsource-parser-1.1.2.tgz"
+  resolved "https://registry.yarnpkg.com/eventsource-parser/-/eventsource-parser-1.1.2.tgz#ed6154a4e3dbe7cda9278e5e35d2ffc58b309f89"
   integrity sha512-v0eOBUbiaFojBu2s2NPBfYUoRR9GjcDNvCXVaqEf5vVfpIAh9f8RCo4vXTP8c63QRKCFwoLpMpTdPwwhEKVgzA==
 
 expect-type@^1.2.1:
@@ -2782,7 +2782,7 @@ resolve-pkg-maps@^1.0.0:
 
 robot3@^0.4.1:
   version "0.4.1"
-  resolved "https://registry.npmjs.org/robot3/-/robot3-0.4.1.tgz"
+  resolved "https://registry.yarnpkg.com/robot3/-/robot3-0.4.1.tgz#b179edee27a1d7b6a99d03c494906c609fe28fca"
   integrity sha512-hzjy826lrxzx8eRgv80idkf8ua1JAepRc9Efdtj03N3KNJuznQCPlyCJ7gnUmDFwZCLQjxy567mQVKmdv2BsXQ==
 
 rollup@^4.40.0:

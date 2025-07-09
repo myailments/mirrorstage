@@ -192,8 +192,7 @@ class AIPipeline {
       this.updateStatus(item, PipelineStatus.EVALUATING);
       const evaluations = await this.services.evaluator.evaluateInputs([item]);
       const evaluation = evaluations[0];
-
-      if (!evaluation || evaluation.priority < this.config.minPriority) {
+      if (evaluation.priority < this.config.minPriority) {
         this.updateStatus(item, PipelineStatus.REJECTED);
         return;
       }

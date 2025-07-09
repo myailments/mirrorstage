@@ -19,8 +19,9 @@ export type TTSService = (typeof TTSService)[keyof typeof TTSService];
 
 export const VideoSyncService = {
   LOCAL: 'local',
-  FAL: 'fal',
+  FAL_LATENT_SYNC: 'fal-latent-sync',
   SYNC_LABS: 'sync-labs',
+  FAL_PIXVERSE: 'fal-pixverse',
 } as const;
 
 export type VideoSyncService =
@@ -96,11 +97,16 @@ export interface Config {
   latentsyncEndpoint: string;
   latentSyncPort: number;
 
-  // FAL API LatentSync
-  useFalLatentSync: boolean;
+  // FAL API
   falApiKey?: string;
 
+  // FAL API LatentSync
+  useFalLatentSync: boolean;
+
+  // FAL API Pixverse
+  useFalPixverse: boolean;
   // Sync Labs
+
   useSyncLabs: boolean;
   syncLabsKey?: string;
 

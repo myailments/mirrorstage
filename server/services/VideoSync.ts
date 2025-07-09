@@ -79,6 +79,8 @@ export class LocalLatentSync extends BaseVideoSync {
 // FAL LatentSync implementation (external API)
 export class FalLatentSync extends BaseVideoSync {
   private falClient: typeof fal | null;
+  private cachedVideoUrl: string | null = null;
+  private cachedVideoPath: string | null = null;
 
   constructor(config: Config) {
     super(config);
@@ -93,6 +95,33 @@ export class FalLatentSync extends BaseVideoSync {
     }
   }
 
+  private async getOrUploadFALBaseVideo(
+    falClient: typeof fal
+  ): Promise<string> {
+    // Check if we have a cached video URL and the base video path hasn't changed
+    if (
+      this.cachedVideoUrl &&
+      this.cachedVideoPath === this.config.baseVideoPath
+    ) {
+      logger.info('Using cached base video URL');
+      return this.cachedVideoUrl;
+    }
+
+    // Upload the base video and cache the result
+    logger.info('Uploading base video to FAL storage');
+    const videoFile = fs.readFileSync(this.config.baseVideoPath);
+    const videoUrl = await falClient.storage.upload(
+      new Blob([videoFile], { type: 'video/mp4' })
+    );
+
+    // Cache the URL and path
+    this.cachedVideoUrl = videoUrl;
+    this.cachedVideoPath = this.config.baseVideoPath;
+    logger.info('Base video uploaded and cached');
+
+    return videoUrl;
+  }
+
   async process(audioPath: string): Promise<string> {
     try {
       if (!this.config.falApiKey) {
@@ -104,15 +133,13 @@ export class FalLatentSync extends BaseVideoSync {
       }
 
       const audioFile = fs.readFileSync(audioPath);
-      const videoFile = fs.readFileSync(this.config.baseVideoPath);
 
+      // Upload audio and get/upload video in parallel
       const [audioUrl, videoUrl] = await Promise.all([
         this.falClient.storage.upload(
           new Blob([audioFile], { type: 'audio/wav' })
         ),
-        this.falClient.storage.upload(
-          new Blob([videoFile], { type: 'video/mp4' })
-        ),
+        this.getOrUploadFALBaseVideo(this.falClient),
       ]);
 
       const result = await this.falClient.subscribe('fal-ai/latentsync', {
@@ -121,6 +148,121 @@ export class FalLatentSync extends BaseVideoSync {
           audio_url: audioUrl,
           guidance_scale: 1,
           seed: 42,
+          loop_mode: 'loop',
+        },
+        logs: false,
+      });
+
+      if (!result.data?.video?.url) {
+        throw new Error('No video URL in FAL.ai response');
+      }
+
+      const videoResponse = await fetch(result.data.video.url);
+      const videoBuffer = await videoResponse.arrayBuffer();
+      const videoPath = path.join(
+        this.config.outputDir,
+        `video_${Date.now()}.mp4`
+      );
+
+      fs.writeFileSync(videoPath, Buffer.from(videoBuffer));
+      return videoPath;
+    } catch (error) {
+      logger.error(
+        `FAL video sync error: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+      throw error;
+    }
+  }
+
+  async testConnection(): Promise<boolean> {
+    try {
+      if (!this.falClient) {
+        return await Promise.resolve(false);
+      }
+      // In the real implementation, we would test the API connection
+      return await Promise.resolve(true);
+    } catch (error) {
+      logger.warn(
+        `FAL API connection test failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+      return await Promise.resolve(false);
+    }
+  }
+}
+
+export class FalPixverseSync extends BaseVideoSync {
+  private falClient: typeof fal | null;
+  private cachedVideoUrl: string | null = null;
+  private cachedVideoPath: string | null = null;
+
+  constructor(config: Config) {
+    super(config);
+    this.falClient = null;
+    this.initializeClient();
+  }
+
+  initializeClient(): void {
+    if (!this.falClient) {
+      fal.config({ credentials: this.config.falApiKey });
+      this.falClient = fal;
+    }
+  }
+
+  private async getOrUploadFALBaseVideo(
+    falClient: typeof fal
+  ): Promise<string> {
+    // Check if we have a cached video URL and the base video path hasn't changed
+    if (
+      this.cachedVideoUrl &&
+      this.cachedVideoPath === this.config.baseVideoPath
+    ) {
+      logger.info('Using cached base video URL');
+      return this.cachedVideoUrl;
+    }
+
+    // Upload the base video and cache the result
+    logger.info('Uploading base video to FAL storage');
+    const videoFile = fs.readFileSync(this.config.baseVideoPath);
+    const videoUrl = await falClient.storage.upload(
+      new Blob([videoFile], { type: 'video/mp4' })
+    );
+
+    // Cache the URL and path
+    this.cachedVideoUrl = videoUrl;
+    this.cachedVideoPath = this.config.baseVideoPath;
+    logger.info('Base video uploaded and cached');
+
+    return videoUrl;
+  }
+
+  async process(audioPath: string): Promise<string> {
+    try {
+      if (!this.config.falApiKey) {
+        throw new Error('FAL API key not found');
+      }
+
+      if (!this.falClient) {
+        throw new Error('FAL client initialization failed');
+      }
+
+      const audioFile = fs.readFileSync(audioPath);
+
+      // Upload audio and get/upload video in parallel
+      const [audioUrl, videoUrl] = await Promise.all([
+        this.falClient.storage.upload(
+          new Blob([audioFile], { type: 'audio/wav' })
+        ),
+        this.getOrUploadFALBaseVideo(this.falClient),
+      ]);
+
+      const result = await this.falClient.subscribe('fal-ai/pixverse/lipsync', {
+        input: {
+          video_url: videoUrl,
+          audio_url: audioUrl,
         },
         logs: false,
       });
