@@ -1,5 +1,3 @@
-// OBS WebSocket service for controlling OBS scenes and sources
-
 import fs from 'node:fs';
 import path from 'node:path';
 import OBSWebSocket from 'obs-websocket-js';
@@ -34,6 +32,13 @@ export class OBSStream {
   private baseSourceName = 'Base_Video';
   private activeGeneratedSource: string | null = null;
 
+  // Connection management
+  private connectionRetries = 0;
+  private maxRetries = 3;
+  private connectionTimeout = 10_000; // 10 seconds
+  private retryDelay = 5000; // 5 seconds
+  private isConnecting = false;
+
   // Vision
   private screenshotInterval: NodeJS.Timeout | null = null;
   private screenshotDirectory: string;
@@ -46,6 +51,15 @@ export class OBSStream {
     this.config = config;
     this.obs = new OBSWebSocket();
     this.currentScene = this.singleSceneName;
+
+    // Configure connection settings from config or use defaults
+    this.maxRetries = config.obsWebSocketMaxRetries ?? 3;
+    this.connectionTimeout = config.obsWebSocketTimeout ?? 10_000; // 10 seconds
+    this.retryDelay = config.obsWebSocketRetryDelay ?? 5000; // 5 seconds
+
+    logger.info(
+      `OBS WebSocket configured with: timeout=${this.connectionTimeout}ms, maxRetries=${this.maxRetries}, retryDelay=${this.retryDelay}ms`
+    );
 
     // Set capture frequency from config
     this.captureFrequencyMs = (this.config.visionIntervalSeconds || 30) * 1000;
@@ -74,19 +88,24 @@ export class OBSStream {
     this.obs.on('ConnectionOpened', () => {
       logger.info('Connected to OBS WebSocket server');
       this.connected = true;
+      this.connectionRetries = 0; // Reset retry counter on successful connection
     });
 
     this.obs.on('ConnectionClosed', () => {
       logger.info('Disconnected from OBS WebSocket server');
       this.connected = false;
+      this.isConnecting = false;
     });
 
     this.obs.on('ConnectionError', (err) => {
       logger.error(`OBS WebSocket connection error: ${err.message}`);
       this.connected = false;
+      this.isConnecting = false;
 
-      // Attempt to reconnect after a delay
-      setTimeout(() => this.connect(), 5000);
+      // Don't auto-reconnect here - let the main connect() method handle retries
+      logger.info(
+        'Connection error occurred. Manual reconnection may be required.'
+      );
     });
 
     // Add listener for all events to help with debugging
@@ -116,18 +135,50 @@ export class OBSStream {
    * Connect to OBS WebSocket server
    */
   async connect(): Promise<boolean> {
+    // Prevent multiple simultaneous connection attempts
+    if (this.isConnecting) {
+      logger.warn('Connection attempt already in progress');
+      return false;
+    }
+
+    // Check if we've exceeded max retries
+    if (this.connectionRetries >= this.maxRetries) {
+      logger.error(
+        `Maximum connection retries (${this.maxRetries}) exceeded. Giving up.`
+      );
+      return false;
+    }
+
+    this.isConnecting = true;
+    this.connectionRetries++;
+
     try {
       const { obsWebSocketHost, obsWebSocketPort, obsWebSocketPassword } =
         this.config;
 
       // Format the connection URL properly
       const url = `ws://${obsWebSocketHost}:${obsWebSocketPort}`;
-      logger.info(`Attempting to connect to OBS WebSocket at: ${url}`);
+      logger.info(
+        `Attempting to connect to OBS WebSocket at: ${url} (attempt ${this.connectionRetries}/${this.maxRetries})`
+      );
 
-      // Connect to OBS WebSocket server with v5 API
-      await this.obs.connect(url, obsWebSocketPassword);
+      // Create a promise that will timeout
+      const connectionPromise = this.obs.connect(url, obsWebSocketPassword);
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(
+            new Error(`Connection timeout after ${this.connectionTimeout}ms`)
+          );
+        }, this.connectionTimeout);
+      });
+
+      // Race between connection and timeout
+      await Promise.race([connectionPromise, timeoutPromise]);
+
       logger.info('Connected to OBS WebSocket server');
       this.connected = true;
+      this.isConnecting = false;
+      this.connectionRetries = 0; // Reset retry counter on successful connection
 
       // Get OBS version information for debugging
       try {
@@ -163,20 +214,22 @@ export class OBSStream {
 
       // Create or switch to a dedicated scene collection
       await this.createSceneCollection();
-
       await this.setupScenes();
 
       return true;
     } catch (error) {
+      this.isConnecting = false;
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
       logger.error(
-        `Failed to connect to OBS: ${
-          error instanceof Error ? error.message : String(error)
-        }`
+        `Failed to connect to OBS (attempt ${this.connectionRetries}/${this.maxRetries}): ${errorMessage}`
       );
+
       this.connected = false;
 
       // If error contains specific information about version incompatibility, log it clearly
-      if (error instanceof Error && error.message.includes('socket version')) {
+      if (errorMessage.includes('socket version')) {
         logger.error(
           'ERROR: OBS WebSocket version incompatibility detected. Please ensure OBS Studio has WebSocket v5.x installed.'
         );
@@ -185,8 +238,21 @@ export class OBSStream {
         );
       }
 
-      // Attempt to reconnect after a delay
-      setTimeout(() => this.connect(), 5000);
+      // Schedule retry if we haven't exceeded max retries
+      if (this.connectionRetries < this.maxRetries) {
+        logger.info(`Scheduling retry in ${this.retryDelay}ms...`);
+        setTimeout(() => {
+          this.connect().catch((retryError) => {
+            logger.error(
+              `Retry connection failed: ${retryError instanceof Error ? retryError.message : String(retryError)}`
+            );
+          });
+        }, this.retryDelay);
+      } else {
+        logger.error(
+          'Maximum connection retries exceeded. Please check OBS WebSocket configuration.'
+        );
+      }
 
       return false;
     }
@@ -383,10 +449,39 @@ export class OBSStream {
   }
 
   /**
+   * Reset connection state to allow fresh connection attempts
+   */
+  resetConnectionState(): void {
+    this.connectionRetries = 0;
+    this.isConnecting = false;
+    this.connected = false;
+    logger.info('Connection state reset. Ready for new connection attempts.');
+  }
+
+  /**
+   * Get current connection status and retry information
+   */
+  getConnectionStatus(): {
+    connected: boolean;
+    isConnecting: boolean;
+    retries: number;
+    maxRetries: number;
+    canRetry: boolean;
+  } {
+    return {
+      connected: this.connected,
+      isConnecting: this.isConnecting,
+      retries: this.connectionRetries,
+      maxRetries: this.maxRetries,
+      canRetry: this.connectionRetries < this.maxRetries,
+    };
+  }
+
+  /**
    * Disconnect from OBS WebSocket server
    */
   async disconnect(): Promise<void> {
-    if (this.connected) {
+    if (this.connected || this.isConnecting) {
       try {
         // Remove all event listeners to prevent memory leaks
         this.obs.off('ConnectionOpened');
@@ -396,8 +491,15 @@ export class OBSStream {
 
         this.stopScreenshotCapture();
 
-        await this.obs.disconnect();
+        if (this.connected) {
+          await this.obs.disconnect();
+        }
+
+        // Reset connection state
         this.connected = false;
+        this.isConnecting = false;
+        this.connectionRetries = 0;
+
         logger.info('Disconnected from OBS WebSocket server');
       } catch (error) {
         logger.error(
@@ -405,6 +507,11 @@ export class OBSStream {
             error instanceof Error ? error.message : String(error)
           }`
         );
+
+        // Reset state even if disconnect failed
+        this.connected = false;
+        this.isConnecting = false;
+        this.connectionRetries = 0;
       }
     }
   }

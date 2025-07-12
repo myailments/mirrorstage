@@ -75,7 +75,7 @@ const config: Config = {
   minQueueSize: Number.parseInt(process.env.MIN_QUEUE_SIZE || '3', 10),
   maxQueueSize: Number.parseInt(process.env.MAX_QUEUE_SIZE || '10', 10),
   maxConcurrent: Number.parseInt(process.env.MAX_CONCURRENT || '4', 10),
-  minPriority: Number.parseInt(process.env.MIN_PRIORITY || '0', 10),
+  minPriority: Number.parseInt(process.env.MIN_PRIORITY || '5', 10),
   // Text Generation (LLM) Configuration
   // OpenRouter
   useOpenRouter: selectedServices.llm === LLMService.OPENROUTER,
@@ -156,6 +156,11 @@ const config: Config = {
   visionPrompt:
     process.env.VISION_PROMPT ||
     'You are analyzing a livestream. What is happening in this image?',
+
+  // Message Ingestion Configuration
+  usePumpFun: process.env.USE_PUMP_FUN === 'true',
+  pumpFunUrl: process.env.PUMP_FUN_URL,
+  pumpFunHeadless: process.env.PUMP_FUN_HEADLESS === 'true',
 };
 
 // Validate configuration

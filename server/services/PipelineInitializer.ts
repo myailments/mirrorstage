@@ -2,8 +2,13 @@ import type { Config } from '../types/index.js';
 import { logger } from '../utils/logger.js';
 import { MessageEvaluator, TestMessageEvaluator } from './Evaluator.js';
 import { FileManager } from './FileManager.js';
-import type { TTSService, VideoSyncService } from './interfaces.js';
+import type {
+  MessageIngestionService,
+  TTSService,
+  VideoSyncService,
+} from './interfaces.js';
 import { OBSStream } from './OBSStream.js';
+import { PumpFunMessages } from './PumpFunMessages.js';
 import { TestTextGenerator, TextGenerator } from './TextGenerator.js';
 import { ElevenLabsTTS, TestTTS, ZonosTTS, ZonosTTSAPI } from './TTS.js';
 import {
@@ -21,6 +26,7 @@ export interface PipelineServices {
   tts: TTSService;
   sync: VideoSyncService;
   obsStream: OBSStream;
+  messageIngestion?: MessageIngestionService;
 }
 
 export class PipelineInitializer {
@@ -49,6 +55,7 @@ export class PipelineInitializer {
         tts: this.createTTSService(),
         sync: this.createSyncService(),
         obsStream: this.createOBSService(),
+        messageIngestion: this.createMessageIngestionService(),
       };
 
       // Connect to OBS WebSocket
@@ -116,6 +123,13 @@ export class PipelineInitializer {
     return new OBSStream(this.config);
   }
 
+  private createMessageIngestionService(): MessageIngestionService | undefined {
+    if (this.config.usePumpFun) {
+      return new PumpFunMessages(this.config);
+    }
+    return;
+  }
+
   /**
    * Test service connections
    */
@@ -124,6 +138,7 @@ export class PipelineInitializer {
     await this.testTTSService(services.tts);
     await this.testSyncService(services.sync);
     await this.testOBSService(services.obsStream);
+    this.testMessageIngestionService(services.messageIngestion);
   }
 
   private async testTextGeneratorService(textGenerator: {
@@ -178,5 +193,25 @@ export class PipelineInitializer {
       );
     }
     return Promise.resolve();
+  }
+
+  private testMessageIngestionService(
+    messageIngestion?: MessageIngestionService
+  ): void {
+    if (!messageIngestion) {
+      return;
+    }
+
+    try {
+      if (messageIngestion.isConnected()) {
+        logger.info('Message ingestion service connection verified');
+      } else {
+        logger.warn('Message ingestion service not connected');
+      }
+    } catch (error) {
+      logger.warn(
+        `Message ingestion service connection warning: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
   }
 }

@@ -17,7 +17,8 @@ type ServiceName =
   | TTSService
   | VideoSyncService
   | StreamAnalysisService
-  | 'OBS';
+  | 'OBS'
+  | 'PumpFunMessages';
 
 // ANSI Colors
 const colors = {
