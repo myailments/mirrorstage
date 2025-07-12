@@ -6,8 +6,8 @@ import type {
   OBSMediaEvent,
   OBSScene,
   OBSSceneItem,
-} from '../types/index.ts';
-import { logger as loggerService } from '../utils/logger.ts';
+} from '../types/index';
+import { logger as loggerService } from '../utils/logger';
 
 const logger = {
   info: (message: string) => {

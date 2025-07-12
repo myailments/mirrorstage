@@ -19,12 +19,12 @@
 import 'dotenv/config';
 import fs from 'node:fs';
 import express from 'express';
-import config from './config.ts';
+import config from './config';
 import {
   PipelineInitializer,
   type PipelineServices,
-} from './services/PipelineInitializer.ts';
-// import { StreamAnalyzer } from './services/_StreamAnalyzer.ts';
+} from './services/PipelineInitializer';
+// import { StreamAnalyzer } from './services/_StreamAnalyzer';
 import {
   type CompletedVideo,
   type Config,
@@ -33,8 +33,8 @@ import {
   PipelineStatus,
   type PipelineStatusSummary,
   // type StreamAnalysisResult,
-} from './types/index.ts';
-import { logger } from './utils/logger.ts';
+} from './types/index';
+import { logger } from './utils/logger';
 
 // Initialize Express app
 const app = express();

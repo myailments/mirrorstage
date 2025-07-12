@@ -7,9 +7,9 @@ import {
   type Config,
   type StreamAnalysisResult,
   StreamAnalysisService,
-} from '../types/index.ts';
-import { logger as loggerService } from '../utils/logger.ts';
-import type { OBSStream } from './OBSStream.ts';
+} from '../types/index';
+import { logger as loggerService } from '../utils/logger';
+import type { OBSStream } from './OBSStream';
 
 const logger = {
   info: (message: string) => {
