@@ -1,0 +1,2 @@
+# This file ensures the generated_videos directory is tracked by git
+# even though its contents are ignored 

@@ -1,0 +1,43 @@
+{
+  "name": "stream-service",
+  "version": "0.1.0",
+  "description": "AI-powered video pipeline with OpenAI, Zonos TTS, and LatentSync",
+  "main": "dist/server/app.js",
+  "type": "module",
+  "scripts": {
+    "start": "node dist/server/app.js",
+    "dev": "nodemon --exec tsx server/app.ts",
+    "cli": "node dist/server/app.js --cli",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "start:dev": "tsx server/app.ts",
+    "cli:dev": "tsx server/app.ts --cli",
+    "lint": "ultracite lint",
+    "format": "ultracite format"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.779.0",
+    "@aws-sdk/s3-request-presigner": "^3.779.0",
+    "@fal-ai/client": "^1.5.0",
+    "@supabase/supabase-js": "^2.49.4",
+    "@zyphra/client": "^1.0.3",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "form-data": "^4.0.0",
+    "node-fetch": "^3.3.2",
+    "obs-websocket-js": "^5.0.6",
+    "openai": "^4.87.3",
+    "puppeteer": "^23.9.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.0.6",
+    "@types/express": "^4.17.13",
+    "@types/node": "^22.13.10",
+    "nodemon": "^3.1.9",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.7.0",
+    "typescript": "^5.8.2",
+    "ultracite": "5.0.32"
+  }
+}
