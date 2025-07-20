@@ -1381,3 +1381,4 @@ export class OBSStream {
       throw error;
     }
   }
+}
