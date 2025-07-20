@@ -1,21 +1,3 @@
-/**
- * AI Stream Service - Main Application
- *
- * This is the entry point for the AI Stream Service, a modular pipeline that:
- * 1. Receives user input from CLI
- * 2. Generates AI text responses using configurable LLM services
- * 3. Converts text to speech using various TTS options
- * 4. Synchronizes speech with video for realistic talking head videos
- * 5. Streams content via OBS integration
- *
- * The system uses a service-oriented architecture where each component
- * (text generation, TTS, video sync, media streaming) can be configured
- * to use different implementations based on user needs and available resources.
- *
- * This service is designed exclusively for OBS streaming, with no web client components.
- *
- * @license MIT
- */
 import 'dotenv/config';
 import fs from 'node:fs';
 import express from 'express';

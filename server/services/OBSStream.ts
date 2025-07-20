@@ -39,6 +39,13 @@ export class OBSStream {
   private retryDelay = 5000; // 5 seconds
   private isConnecting = false;
 
+  // Video timeout management
+  private videoTimeoutId: NodeJS.Timeout | null = null;
+  private videoStartTime: number | null = null;
+  private maxVideoTimeoutMs = 120_000; // 2 minutes max per video
+  private activeVideoHandler: ((data: OBSMediaEvent) => Promise<void>) | null =
+    null;
+
   // Vision
   private screenshotInterval: NodeJS.Timeout | null = null;
   private screenshotDirectory: string;
@@ -483,6 +490,12 @@ export class OBSStream {
   async disconnect(): Promise<void> {
     if (this.connected || this.isConnecting) {
       try {
+        // Clear video timeout
+        if (this.videoTimeoutId) {
+          clearTimeout(this.videoTimeoutId);
+          this.videoTimeoutId = null;
+        }
+
         // Remove all event listeners to prevent memory leaks
         this.obs.off('ConnectionOpened');
         this.obs.off('ConnectionClosed');
@@ -499,6 +512,9 @@ export class OBSStream {
         this.connected = false;
         this.isConnecting = false;
         this.connectionRetries = 0;
+        this.isTransitioning = false;
+        this.videoStartTime = null;
+        this.activeVideoHandler = null;
 
         logger.info('Disconnected from OBS WebSocket server');
       } catch (error) {
@@ -512,6 +528,9 @@ export class OBSStream {
         this.connected = false;
         this.isConnecting = false;
         this.connectionRetries = 0;
+        this.isTransitioning = false;
+        this.videoStartTime = null;
+        this.activeVideoHandler = null;
       }
     }
   }
@@ -532,7 +551,10 @@ export class OBSStream {
     }
 
     this.isTransitioning = true;
-    const nextVideoPath = this.pendingVideoQueue.shift();
+    this.videoStartTime = Date.now();
+
+    // Don't remove from queue yet - just peek at the next video
+    const nextVideoPath = this.pendingVideoQueue[0];
 
     if (!nextVideoPath) {
       this.isTransitioning = false;
@@ -543,6 +565,19 @@ export class OBSStream {
       const absoluteVideoPath = path.resolve(nextVideoPath);
       const videoFilename = path.basename(nextVideoPath);
       const uniqueSourceName = `Generated_${Date.now()}_${videoFilename}`;
+
+      logger.info(
+        `Starting video processing: ${uniqueSourceName} (${this.pendingVideoQueue.length} remaining in queue)`
+      );
+
+      // Verify file exists before processing
+      if (!fs.existsSync(absoluteVideoPath)) {
+        logger.error(`Video file not found: ${absoluteVideoPath}`);
+        this.pendingVideoQueue.shift(); // Remove the missing file
+        this.isTransitioning = false;
+        this.continueQueueProcessing();
+        return;
+      }
 
       // Clean up any old generated sources
       await this.cleanupOldGeneratedSources();
@@ -611,9 +646,14 @@ export class OBSStream {
             'Hid base video source (keeping it playing in background)'
           );
         }
+        this.pendingVideoQueue.shift();
+        logger.info(
+          `Successfully started video, removed from queue. ${this.pendingVideoQueue.length} videos remaining`
+        );
       } else {
         logger.error('Could not get sceneItemId for new source, aborting');
         this.isTransitioning = false;
+        this.continueQueueProcessing();
         return;
       }
 
@@ -626,8 +666,14 @@ export class OBSStream {
         }
       };
 
+      // Store the handler so we can clean it up if needed
+      this.activeVideoHandler = mediaEndHandler;
+
       // Add the event handler
       this.obs.on('MediaInputPlaybackEnded', mediaEndHandler);
+
+      // Set up timeout to prevent getting stuck
+      this.setupVideoTimeout(uniqueSourceName, mediaEndHandler);
     } catch (error) {
       logger.error(
         `Failed to play video in single scene: ${
@@ -635,6 +681,37 @@ export class OBSStream {
         }`
       );
       this.isTransitioning = false;
+
+      // Don't remove from queue on error - leave it there for retry
+      // But skip to next video to prevent infinite loops with bad videos
+      logger.warn(`Skipping problematic video: ${nextVideoPath}`);
+      this.pendingVideoQueue.shift(); // Remove the problematic video
+      this.continueQueueProcessing();
+    }
+  }
+
+  /**
+   * Continue processing the queue after an error or completion
+   */
+  private continueQueueProcessing(): void {
+    if (this.pendingVideoQueue.length > 0) {
+      logger.info(
+        `Continuing queue processing: ${this.pendingVideoQueue.length} videos remaining`
+      );
+      // Process next video with a short delay to avoid tight error loops
+      setTimeout(() => {
+        this.playNextVideoInSingleScene().catch((error) => {
+          logger.error(
+            `Error in queue continuation: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+          // If processing fails, still try to continue the queue
+          this.continueQueueProcessing();
+        });
+      }, 250); // Reduced delay but still prevents tight loops
+    } else {
+      logger.info('Queue processing complete - no more videos to process');
     }
   }
 
@@ -649,7 +726,17 @@ export class OBSStream {
       `Generated video ended: ${uniqueSourceName}, returning to base video instantly`
     );
 
-    // Remove the artificial delay and optimize the transition
+    // Clear timeout since video ended normally
+    if (this.videoTimeoutId) {
+      clearTimeout(this.videoTimeoutId);
+      this.videoTimeoutId = null;
+    }
+
+    // Remove this specific event listener FIRST to prevent duplicate calls
+    this.obs.off('MediaInputPlaybackEnded', mediaEndHandler);
+    this.activeVideoHandler = null;
+
+    // Ensure cleanup is fully complete before continuing
     try {
       // Execute all transition operations in parallel for instantaneous switch
       await Promise.all([
@@ -674,18 +761,96 @@ export class OBSStream {
 
     // Release transition lock
     this.isTransitioning = false;
+    this.videoStartTime = null;
 
-    // Check for more pending videos
-    if (this.pendingVideoQueue.length > 0) {
-      logger.info(
-        `${this.pendingVideoQueue.length} videos still pending in queue`
-      );
-      // Process next video immediately (no delay needed)
-      setTimeout(() => this.playNextVideoInSingleScene(), 100); // Minimal delay for OBS to settle
+    // Add a small delay to ensure OBS has processed all the cleanup operations
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Continue processing queue AFTER cleanup is complete
+    this.continueQueueProcessing();
+  }
+
+  /**
+   * Set up timeout to prevent videos from getting stuck
+   */
+  private setupVideoTimeout(
+    uniqueSourceName: string,
+    mediaEndHandler: (data: OBSMediaEvent) => Promise<void>
+  ): void {
+    // Clear any existing timeout
+    if (this.videoTimeoutId) {
+      clearTimeout(this.videoTimeoutId);
     }
 
-    // Remove this specific event listener
-    this.obs.off('MediaInputPlaybackEnded', mediaEndHandler);
+    this.videoTimeoutId = setTimeout(async () => {
+      logger.warn(
+        `Video timeout reached for ${uniqueSourceName} after ${this.maxVideoTimeoutMs}ms - forcing cleanup`
+      );
+
+      // Force cleanup and continue queue
+      await this.forceVideoCleanup(uniqueSourceName, mediaEndHandler);
+    }, this.maxVideoTimeoutMs);
+
+    logger.info(
+      `Video timeout set for ${uniqueSourceName}: ${this.maxVideoTimeoutMs}ms`
+    );
+  }
+
+  /**
+   * Force cleanup of stuck video and continue queue processing
+   */
+  private async forceVideoCleanup(
+    uniqueSourceName: string,
+    mediaEndHandler: (data: OBSMediaEvent) => Promise<void>
+  ): Promise<void> {
+    logger.warn(`Force cleaning up stuck video: ${uniqueSourceName}`);
+
+    try {
+      // Remove event handler to prevent double cleanup
+      this.obs.off('MediaInputPlaybackEnded', mediaEndHandler);
+      this.activeVideoHandler = null;
+
+      // Clear timeout
+      if (this.videoTimeoutId) {
+        clearTimeout(this.videoTimeoutId);
+        this.videoTimeoutId = null;
+      }
+
+      // Execute cleanup operations
+      await this.cleanupGeneratedSource(uniqueSourceName);
+
+      logger.info('Force cleanup completed');
+    } catch (error) {
+      logger.error(
+        `Error during force cleanup: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+
+    // Release transition lock
+    this.isTransitioning = false;
+    this.videoStartTime = null;
+
+    // Check if there are more videos in the queue
+    if (this.pendingVideoQueue.length > 0) {
+      logger.info('Continuing with next video after force cleanup');
+      await this.playNextVideoInSingleScene();
+    } else {
+      logger.info('No more videos after force cleanup, returning to base');
+      try {
+        await Promise.all([
+          this.showBaseVideo(),
+          this.resumeBaseVideoPlayback(),
+        ]);
+      } catch (error) {
+        logger.error(
+          `Error returning to base after force cleanup: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+    }
   }
 
   private async showBaseVideo(): Promise<void> {
@@ -1270,18 +1435,86 @@ export class OBSStream {
     }
   }
 
-  // This is no longer used, but keeping for backward compatibility
-  private playNextPendingVideo(): Promise<void> {
-    return this.playNextVideoInSingleScene();
+  /**
+   * Get current queue status with timeout information
+   */
+  getQueueStatus(): {
+    queueLength: number;
+    isTransitioning: boolean;
+    currentVideos: string[];
+    activeGeneratedSource: string | null;
+    videoStartTime: number | null;
+    timeoutRemaining: number | null;
+  } {
+    const timeoutRemaining =
+      this.videoStartTime && this.maxVideoTimeoutMs
+        ? Math.max(
+            0,
+            this.maxVideoTimeoutMs - (Date.now() - this.videoStartTime)
+          )
+        : null;
+
+    return {
+      queueLength: this.pendingVideoQueue.length,
+      isTransitioning: this.isTransitioning,
+      currentVideos: [...this.pendingVideoQueue],
+      activeGeneratedSource: this.activeGeneratedSource,
+      videoStartTime: this.videoStartTime,
+      timeoutRemaining,
+    };
   }
 
-  // No longer used, but keeping for backward compatibility
-  private async processAndPlayGeneratedVideo(videoPath: string): Promise<void> {
-    logger.info(
-      'Using single scene approach - redirecting to playNextVideoInSingleScene'
-    );
-    // Just redirect to the new method
-    this.pendingVideoQueue.unshift(videoPath);
-    await this.playNextVideoInSingleScene();
+  /**
+   * Clear the video queue
+   */
+  clearQueue(): void {
+    const clearedCount = this.pendingVideoQueue.length;
+    this.pendingVideoQueue = [];
+    logger.info(`Cleared video queue: ${clearedCount} videos removed`);
+  }
+
+  /**
+   * Force continue queue processing (recovery method)
+   */
+  forceResumeQueue(): void {
+    logger.warn('Force resuming queue - cleaning up stuck state');
+
+    // Clear timeout
+    if (this.videoTimeoutId) {
+      clearTimeout(this.videoTimeoutId);
+      this.videoTimeoutId = null;
+    }
+
+    // Remove any active event handlers
+    if (this.activeVideoHandler) {
+      this.obs.off('MediaInputPlaybackEnded', this.activeVideoHandler);
+      this.activeVideoHandler = null;
+    }
+
+    // Reset state
+    this.isTransitioning = false;
+    this.videoStartTime = null;
+
+    // Try to process any pending videos or return to base
+    if (this.pendingVideoQueue.length > 0) {
+      this.playNextVideoInSingleScene().catch((error) => {
+        logger.error(
+          `Error resuming queue: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      });
+    } else {
+      // Return to base video
+      Promise.all([this.showBaseVideo(), this.resumeBaseVideoPlayback()]).catch(
+        (error) => {
+          logger.error(
+            `Error returning to base during force resume: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+        }
+      );
+    }
   }
 }
