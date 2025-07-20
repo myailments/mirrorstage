@@ -122,7 +122,7 @@ export class TextGenerator {
           content: userInput,
         },
       ],
-      max_tokens: 150,
+      max_tokens: 300,
     });
 
     const response = completion.choices[0]?.message?.content?.trim();

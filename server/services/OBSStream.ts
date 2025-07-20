@@ -626,7 +626,7 @@ export class OBSStream {
         // Store the active generated source name
         this.activeGeneratedSource = uniqueSourceName;
 
-        // Find the base video source to hide it (but keep it playing)
+        // Ensure the generated video is on top of the base video
         const sourcesList = await this.obs.call('GetSceneItemList', {
           sceneName: this.singleSceneName,
         });
@@ -635,20 +635,30 @@ export class OBSStream {
           (item) => item.sourceName === this.baseSourceName
         );
 
-        if (baseSource?.sceneItemId) {
-          // Hide the base video but don't pause it - this ensures instant resume later
-          await this.obs.call('SetSceneItemEnabled', {
-            sceneName: this.singleSceneName,
-            sceneItemId: Number(baseSource.sceneItemId),
-            sceneItemEnabled: false,
-          });
-          logger.info(
-            'Hid base video source (keeping it playing in background)'
-          );
+        if (baseSource?.sceneItemIndex !== undefined) {
+          // Place the generated video above the base video
+          try {
+            await this.obs.call('SetSceneItemIndex', {
+              sceneName: this.singleSceneName,
+              sceneItemId: Number(response.sceneItemId),
+              sceneItemIndex: Number(baseSource.sceneItemIndex) + 1,
+            });
+            logger.info(
+              'Positioned generated video above base video for overlay'
+            );
+          } catch (error) {
+            logger.warn(
+              `Failed to set scene item index: ${
+                error instanceof Error ? error.message : String(error)
+              }`
+            );
+          }
         }
+
+        // Remove from queue after successful setup
         this.pendingVideoQueue.shift();
         logger.info(
-          `Successfully started video, removed from queue. ${this.pendingVideoQueue.length} videos remaining`
+          `Successfully started video overlay, removed from queue. ${this.pendingVideoQueue.length} videos remaining`
         );
       } else {
         logger.error('Could not get sceneItemId for new source, aborting');
@@ -657,7 +667,7 @@ export class OBSStream {
         return;
       }
 
-      logger.info(`Now playing generated video: ${uniqueSourceName}`);
+      logger.info(`Now playing generated video overlay: ${uniqueSourceName}`);
 
       // Set up a one-time listener for when the generated video ends
       const mediaEndHandler = async (data: OBSMediaEvent) => {
@@ -722,9 +732,7 @@ export class OBSStream {
     uniqueSourceName: string,
     mediaEndHandler: (data: OBSMediaEvent) => Promise<void>
   ): Promise<void> {
-    logger.info(
-      `Generated video ended: ${uniqueSourceName}, returning to base video instantly`
-    );
+    logger.info(`Generated video ended: ${uniqueSourceName}, removing overlay`);
 
     // Clear timeout since video ended normally
     if (this.videoTimeoutId) {
@@ -736,34 +744,23 @@ export class OBSStream {
     this.obs.off('MediaInputPlaybackEnded', mediaEndHandler);
     this.activeVideoHandler = null;
 
-    // Ensure cleanup is fully complete before continuing
+    // Simply cleanup the generated source - base video remains visible underneath
     try {
-      // Execute all transition operations in parallel for instantaneous switch
-      await Promise.all([
-        this.showBaseVideo(),
-        this.resumeBaseVideoPlayback(),
-        this.cleanupGeneratedSource(uniqueSourceName),
-      ]);
-
-      logger.info('Instant transition back to base video completed');
+      await this.cleanupGeneratedSource(uniqueSourceName);
+      logger.info('Removed generated video overlay');
     } catch (error) {
       logger.error(
-        `Error during instant transition: ${
+        `Error removing overlay: ${
           error instanceof Error ? error.message : String(error)
         }`
       );
-
-      // Fallback to sequential operations if parallel fails
-      await this.showBaseVideo();
-      await this.cleanupGeneratedSource(uniqueSourceName);
-      await this.resumeBaseVideoPlayback();
     }
 
     // Release transition lock
     this.isTransitioning = false;
     this.videoStartTime = null;
 
-    // Add a small delay to ensure OBS has processed all the cleanup operations
+    // Add a small delay to ensure OBS has processed the cleanup operation
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     // Continue processing queue AFTER cleanup is complete
@@ -837,40 +834,7 @@ export class OBSStream {
       logger.info('Continuing with next video after force cleanup');
       await this.playNextVideoInSingleScene();
     } else {
-      logger.info('No more videos after force cleanup, returning to base');
-      try {
-        await Promise.all([
-          this.showBaseVideo(),
-          this.resumeBaseVideoPlayback(),
-        ]);
-      } catch (error) {
-        logger.error(
-          `Error returning to base after force cleanup: ${
-            error instanceof Error ? error.message : String(error)
-          }`
-        );
-      }
-    }
-  }
-
-  private async showBaseVideo(): Promise<void> {
-    // Find the sources again (they might have changed)
-    const currentSourcesList = await this.obs.call('GetSceneItemList', {
-      sceneName: this.singleSceneName,
-    });
-
-    const baseSource = (
-      currentSourcesList.sceneItems as unknown as OBSSceneItem[]
-    ).find((item) => item.sourceName === this.baseSourceName);
-
-    // Show base video again
-    if (baseSource?.sceneItemId) {
-      await this.obs.call('SetSceneItemEnabled', {
-        sceneName: this.singleSceneName,
-        sceneItemId: Number(baseSource.sceneItemId),
-        sceneItemEnabled: true,
-      });
-      logger.info('Showing base video again');
+      logger.info('No more videos after force cleanup');
     }
   }
 
@@ -888,23 +852,6 @@ export class OBSStream {
       );
     }
     this.activeGeneratedSource = null;
-  }
-
-  private async resumeBaseVideoPlayback(): Promise<void> {
-    try {
-      // Skip status check to avoid delay - just resume immediately
-      await this.obs.call('TriggerMediaInputAction', {
-        inputName: this.baseSourceName,
-        mediaAction: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PLAY',
-      });
-      logger.info('Resumed base video playback instantly');
-    } catch (error) {
-      logger.error(
-        `Error resuming base video: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
-    }
   }
 
   /**
@@ -1434,87 +1381,3 @@ export class OBSStream {
       throw error;
     }
   }
-
-  /**
-   * Get current queue status with timeout information
-   */
-  getQueueStatus(): {
-    queueLength: number;
-    isTransitioning: boolean;
-    currentVideos: string[];
-    activeGeneratedSource: string | null;
-    videoStartTime: number | null;
-    timeoutRemaining: number | null;
-  } {
-    const timeoutRemaining =
-      this.videoStartTime && this.maxVideoTimeoutMs
-        ? Math.max(
-            0,
-            this.maxVideoTimeoutMs - (Date.now() - this.videoStartTime)
-          )
-        : null;
-
-    return {
-      queueLength: this.pendingVideoQueue.length,
-      isTransitioning: this.isTransitioning,
-      currentVideos: [...this.pendingVideoQueue],
-      activeGeneratedSource: this.activeGeneratedSource,
-      videoStartTime: this.videoStartTime,
-      timeoutRemaining,
-    };
-  }
-
-  /**
-   * Clear the video queue
-   */
-  clearQueue(): void {
-    const clearedCount = this.pendingVideoQueue.length;
-    this.pendingVideoQueue = [];
-    logger.info(`Cleared video queue: ${clearedCount} videos removed`);
-  }
-
-  /**
-   * Force continue queue processing (recovery method)
-   */
-  forceResumeQueue(): void {
-    logger.warn('Force resuming queue - cleaning up stuck state');
-
-    // Clear timeout
-    if (this.videoTimeoutId) {
-      clearTimeout(this.videoTimeoutId);
-      this.videoTimeoutId = null;
-    }
-
-    // Remove any active event handlers
-    if (this.activeVideoHandler) {
-      this.obs.off('MediaInputPlaybackEnded', this.activeVideoHandler);
-      this.activeVideoHandler = null;
-    }
-
-    // Reset state
-    this.isTransitioning = false;
-    this.videoStartTime = null;
-
-    // Try to process any pending videos or return to base
-    if (this.pendingVideoQueue.length > 0) {
-      this.playNextVideoInSingleScene().catch((error) => {
-        logger.error(
-          `Error resuming queue: ${
-            error instanceof Error ? error.message : String(error)
-          }`
-        );
-      });
-    } else {
-      // Return to base video
-      Promise.all([this.showBaseVideo(), this.resumeBaseVideoPlayback()]).catch(
-        (error) => {
-          logger.error(
-            `Error returning to base during force resume: ${
-              error instanceof Error ? error.message : String(error)
-            }`
-          );
-        }
-      );
-    }
-  }
-}
