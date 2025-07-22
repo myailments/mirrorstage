@@ -48,6 +48,12 @@ class AIPipeline {
   /** Flag indicating if vision processing is enabled */
   useVision = false;
 
+  /** Interval handler for thought generation */
+  thoughtInterval: NodeJS.Timeout | null = null;
+
+  /** Flag indicating if thought generation is enabled */
+  useThoughts = true;
+
   /** Expose pipeline status enum for external use */
   static Status = PipelineStatus;
 
@@ -128,7 +134,134 @@ class AIPipeline {
       }
     }
 
+    // Initialize thought generation if enabled
+    if (this.useThoughts && this.services.thoughtGenerator) {
+      this.startThoughtGeneration();
+    }
+
     return true;
+  }
+
+  /**
+   * Start automatic thought generation every 30 seconds
+   */
+  startThoughtGeneration(): void {
+    if (this.thoughtInterval) {
+      clearInterval(this.thoughtInterval);
+    }
+
+    logger.info('Starting thought generation with 30-second interval');
+    
+    this.thoughtInterval = setInterval(() => {
+      this.generateThoughtVideo().catch((error) => {
+        logger.error(
+          `Error generating thought video: ${error instanceof Error ? error.message : String(error)}`
+        );
+      });
+    }, 30_000); // 30 seconds
+
+    // Generate the first thought immediately
+    this.generateThoughtVideo().catch((error) => {
+      logger.error(
+        `Error generating initial thought video: ${error instanceof Error ? error.message : String(error)}`
+      );
+    });
+  }
+
+  /**
+   * Stop automatic thought generation
+   */
+  stopThoughtGeneration(): void {
+    if (this.thoughtInterval) {
+      logger.info('Stopping thought generation');
+      clearInterval(this.thoughtInterval);
+      this.thoughtInterval = null;
+    }
+  }
+
+  /**
+   * Generate a thought and process it directly through TTS and video pipeline
+   */
+  private async generateThoughtVideo(): Promise<void> {
+    if (!this.services) {
+      logger.warn('Services not initialized');
+      return;
+    }
+
+    if (!this.services.thoughtGenerator || !this.services.tts || !this.services.sync) {
+      logger.warn('Required services not available for thought generation');
+      return;
+    }
+
+    // Check if we have capacity for processing
+    if (this.getActiveProcessingCount() >= (this.config.maxConcurrent || 1)) {
+      logger.info('Pipeline at capacity, skipping thought generation');
+      return;
+    }
+
+    try {
+      // Generate a unique thought
+      const thought = await this.services.thoughtGenerator.generateThought();
+      
+      // Create a pipeline item for tracking
+      const messageId = `thought-${Date.now()}`;
+      const thoughtItem: PipelineItem = {
+        messageId,
+        userId: 'thought-system',
+        message: 'Generated thought',
+        response: thought,
+        status: PipelineStatus.GENERATING_SPEECH,
+        timestamp: Date.now(),
+        updates: [
+          {
+            status: PipelineStatus.RECEIVED,
+            timestamp: Date.now(),
+          },
+          {
+            status: PipelineStatus.GENERATING_SPEECH,
+            timestamp: Date.now(),
+          },
+        ],
+      };
+
+      this.pipeline.set(messageId, thoughtItem);
+      logger.info(`Processing thought directly through TTS: ${thought.substring(0, 50)}...`);
+
+      // Generate speech directly from thought
+      const audioPath = await this.services.tts.convert(thought);
+      thoughtItem.audioPath = audioPath;
+      this.updateStatus(thoughtItem, PipelineStatus.GENERATING_VIDEO);
+      logger.info(`Generated speech for thought at: ${audioPath}`);
+
+      // Generate video
+      const videoPath = await this.services.sync.process(audioPath);
+      thoughtItem.videoPath = videoPath;
+      this.updateStatus(thoughtItem, PipelineStatus.COMPLETED);
+      logger.info(`Generated video for thought at: ${videoPath}`);
+
+      // Send video to OBS
+      if (this.services.obsStream) {
+        try {
+          await this.services.obsStream.updateGeneratedVideoSource(videoPath);
+          logger.info(`Thought video sent to OBS: ${videoPath}`);
+        } catch (obsError) {
+          logger.error(
+            `Failed to send thought video to OBS: ${obsError instanceof Error ? obsError.message : String(obsError)}`
+          );
+        }
+      }
+
+      // Clean up files
+      if (!this.config.testMode) {
+        fs.unlinkSync(audioPath);
+        fs.unlinkSync(videoPath);
+      }
+
+    } catch (error) {
+      logger.error(
+        `Error in generateThoughtVideo: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
   }
 
   /**
@@ -618,6 +751,11 @@ if (process.argv.includes('--cli')) {
         // if (pipeline.useVision) {
         //   pipeline.stopVisionProcessing();
         // }
+
+        // Stop thought generation if active
+        if (pipeline.useThoughts) {
+          pipeline.stopThoughtGeneration();
+        }
 
         // Disconnect from OBS if connected
         if (pipeline.services?.obsStream) {

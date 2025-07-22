@@ -10,6 +10,7 @@ import type {
 import { OBSStream } from './OBSStream.js';
 import { PumpFunMessages } from './PumpFunMessages.js';
 import { TestTextGenerator, TextGenerator } from './TextGenerator.js';
+import { ThoughtGenerator } from './ThoughtGenerator.js';
 import { ElevenLabsTTS, TestTTS, ZonosTTS, ZonosTTSAPI } from './TTS.js';
 import {
   FalLatentSync,
@@ -23,6 +24,7 @@ export interface PipelineServices {
   fileManager: FileManager;
   evaluator: MessageEvaluator;
   textGenerator: TextGenerator;
+  thoughtGenerator: ThoughtGenerator;
   tts: TTSService;
   sync: VideoSyncService;
   obsStream: OBSStream;
@@ -52,6 +54,7 @@ export class PipelineInitializer {
         fileManager,
         evaluator: this.createEvaluatorService(),
         textGenerator: this.createTextGeneratorService(),
+        thoughtGenerator: this.createThoughtGeneratorService(),
         tts: this.createTTSService(),
         sync: this.createSyncService(),
         obsStream: this.createOBSService(),
@@ -84,6 +87,10 @@ export class PipelineInitializer {
     return this.config.testMode
       ? new TestTextGenerator(this.config)
       : new TextGenerator(this.config);
+  }
+
+  private createThoughtGeneratorService() {
+    return new ThoughtGenerator(this.config);
   }
 
   private createTTSService(): TTSService {
@@ -135,6 +142,7 @@ export class PipelineInitializer {
    */
   async testServices(services: PipelineServices): Promise<void> {
     await this.testTextGeneratorService(services.textGenerator);
+    await this.testThoughtGeneratorService(services.thoughtGenerator);
     await this.testTTSService(services.tts);
     await this.testSyncService(services.sync);
     await this.testOBSService(services.obsStream);
@@ -150,6 +158,19 @@ export class PipelineInitializer {
     } catch (error) {
       logger.warn(
         `Text generation service warning: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  private async testThoughtGeneratorService(thoughtGenerator: {
+    testConnection(): Promise<boolean>;
+  }): Promise<void> {
+    try {
+      await thoughtGenerator.testConnection();
+      logger.info('Thought generation service connection verified');
+    } catch (error) {
+      logger.warn(
+        `Thought generation service warning: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }
