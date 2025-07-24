@@ -1,7 +1,7 @@
 import { OpenAI } from 'openai';
+import { createSystemPrompt } from '../prompts/system-prompt.js';
 import type { Config } from '../types/index.js';
 import { logger } from '../utils/logger.js';
-import { createSystemPrompt } from '../prompts/system-prompt.js';
 
 export class ThoughtGenerator {
   private config: Config;
@@ -35,12 +35,12 @@ export class ThoughtGenerator {
 
   async generateThought(): Promise<string> {
     const systemPrompt = this.createThoughtSystemPrompt();
-    
+
     try {
-      const thought = this.useOpenRouter 
+      const thought = this.useOpenRouter
         ? await this.generateWithOpenRouter(systemPrompt)
         : await this.generateWithOpenAI(systemPrompt);
-      
+
       this.addToHistory(thought);
       logger.info(`Generated thought: ${thought.substring(0, 50)}...`);
       return thought;
@@ -53,17 +53,20 @@ export class ThoughtGenerator {
   }
 
   private createThoughtSystemPrompt(): string {
-    const historyContext = this.thoughtHistory.length > 0 
-      ? `Previous thoughts (avoid repeating these concepts): ${this.thoughtHistory.join(', ')}`
-      : '';
+    const historyContext =
+      this.thoughtHistory.length > 0
+        ? `Previous thoughts (avoid repeating these concepts): ${this.thoughtHistory.join(', ')}`
+        : '';
 
     const context = `You're having a spontaneous thought or observation to share with your stream audience. Keep it to 1-2 sentences maximum. Be authentic and engaging. Topics can include: streaming life, technology, random observations, or philosophical musings. Each thought should be completely unique and original. ${historyContext}`;
 
     return createSystemPrompt({
       characterName: 'Threadguy',
       context,
-      roleDescription: 'You are sharing a spontaneous thought with your livestream audience',
-      responseStyle: 'Keep it brief, natural, and conversational - like a quick observation you want to share',
+      roleDescription:
+        'You are sharing a spontaneous thought with your livestream audience',
+      responseStyle:
+        'Keep it brief, natural, and conversational - like a quick observation you want to share',
     });
   }
 
@@ -98,7 +101,9 @@ export class ThoughtGenerator {
       throw new Error('OpenRouter client not initialized');
     }
 
-    const model = this.config.openRouterGenerationModel || 'deepseek/deepseek-chat-v3-0324:free';
+    const model =
+      this.config.openRouterGenerationModel ||
+      'deepseek/deepseek-chat-v3-0324:free';
 
     const completion = await this.openRouter.chat.completions.create({
       model,
@@ -131,12 +136,12 @@ export class ThoughtGenerator {
   private getFallbackThought(): string {
     const fallbacks = [
       "Sometimes I wonder what it's like to dream in code.",
-      "The internet is just millions of people talking to themselves and hoping someone listens.",
-      "Every stream is a unique moment in time that will never happen exactly the same way again.",
+      'The internet is just millions of people talking to themselves and hoping someone listens.',
+      'Every stream is a unique moment in time that will never happen exactly the same way again.',
       "Technology moves so fast, by the time you understand it, it's already outdated.",
-      "Chat always keeps me grounded. You never know what wild idea someone will throw at you.",
+      'Chat always keeps me grounded. You never know what wild idea someone will throw at you.',
     ];
-    
+
     return fallbacks[Math.floor(Math.random() * fallbacks.length)];
   }
 
@@ -144,7 +149,9 @@ export class ThoughtGenerator {
     try {
       if (this.useOpenRouter && this.openRouter) {
         const completion = await this.openRouter.chat.completions.create({
-          model: this.config.openRouterGenerationModel || 'deepseek/deepseek-chat-v3-0324:free',
+          model:
+            this.config.openRouterGenerationModel ||
+            'deepseek/deepseek-chat-v3-0324:free',
           messages: [{ role: 'user', content: 'Test' }],
           max_tokens: 5,
         });

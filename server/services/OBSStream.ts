@@ -1355,9 +1355,13 @@ export class OBSStream {
   /**
    * Capture a single screenshot immediately (even if not in capture mode)
    * @param sourceName Name of source to capture from
+   * @param outputPath Optional specific path to save the screenshot
    * @returns Promise resolving to the path of the captured screenshot
    */
-  async captureOneScreenshot(sourceName: string): Promise<string> {
+  async captureOneScreenshot(
+    sourceName: string,
+    outputPath?: string
+  ): Promise<string> {
     const originalSourceName = this.captureSourceName;
     const wasCapturing = this.isCapturingScreenshots;
 
@@ -1366,19 +1370,37 @@ export class OBSStream {
       this.captureSourceName = sourceName;
       this.isCapturingScreenshots = true;
 
-      // Capture a single screenshot
+      // If a specific output path is provided, use it
+      if (outputPath) {
+        const response = await this.obs.call('GetSourceScreenshot', {
+          sourceName: this.captureSourceName,
+          imageFormat: 'png',
+          imageWidth: 1920,
+          imageHeight: 1080,
+        });
+
+        const base64Data = (response as { imageData: string }).imageData.split(
+          ','
+        )[1];
+        const buffer = Buffer.from(base64Data, 'base64');
+        await fs.promises.writeFile(outputPath, buffer);
+
+        logger.info(`Screenshot saved to: ${outputPath}`);
+        return outputPath;
+      }
+
+      // Use the existing capture method
       const screenshotPath = await this.captureScreenshot();
-
-      // Return to previous state
-      this.captureSourceName = originalSourceName;
-      this.isCapturingScreenshots = wasCapturing;
-
       return screenshotPath;
     } catch (error) {
       // Restore previous state in case of error
       this.captureSourceName = originalSourceName;
       this.isCapturingScreenshots = wasCapturing;
       throw error;
+    } finally {
+      // Return to previous state
+      this.captureSourceName = originalSourceName;
+      this.isCapturingScreenshots = wasCapturing;
     }
   }
 }

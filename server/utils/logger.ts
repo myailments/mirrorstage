@@ -18,7 +18,8 @@ type ServiceName =
   | VideoSyncService
   | StreamAnalysisService
   | 'OBS'
-  | 'PumpFunMessages';
+  | 'PumpFunMessages'
+  | 'VisionProcessor';
 
 // ANSI Colors
 const colors = {

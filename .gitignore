@@ -144,6 +144,7 @@ venv/
 # Generated files
 generated_videos/
 !generated_videos/.gitkeep
+screenshots/
 logs/
 *.log
 *.mp4

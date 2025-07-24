@@ -6,7 +6,7 @@ import {
   PipelineInitializer,
   type PipelineServices,
 } from './services/PipelineInitializer';
-// import { StreamAnalyzer } from './services/_StreamAnalyzer';
+import { VisionProcessor } from './services/VisionProcessor';
 import {
   type CompletedVideo,
   type Config,
@@ -14,7 +14,6 @@ import {
   type PipelineItem,
   PipelineStatus,
   type PipelineStatusSummary,
-  // type StreamAnalysisResult,
 } from './types/index';
 import { logger } from './utils/logger';
 
@@ -39,20 +38,17 @@ class AIPipeline {
   /** Container for all pipeline services */
   services?: PipelineServices;
 
-  /** Service for analyzing stream content with computer vision */
-  // streamAnalyzer: StreamAnalyzer | null = null;
-
-  /** Interval handler for vision processing */
-  visionInterval: NodeJS.Timeout | null = null;
+  /** Service for processing vision/screenshots */
+  visionProcessor: VisionProcessor | null = null;
 
   /** Flag indicating if vision processing is enabled */
-  useVision = false;
+  useVision = true;
 
   /** Interval handler for thought generation */
   thoughtInterval: NodeJS.Timeout | null = null;
 
   /** Flag indicating if thought generation is enabled */
-  useThoughts = true;
+  useThoughts = false;
 
   /** Expose pipeline status enum for external use */
   static Status = PipelineStatus;
@@ -72,37 +68,30 @@ class AIPipeline {
     const initializer = new PipelineInitializer(this.config);
     this.services = await initializer.initialize();
 
-    // Initialize stream analyzer if OBS is connected
-    // if (this.services.obsStream?.isConnected()) {
-    //   this.streamAnalyzer = new StreamAnalyzer(
-    //     this.services.obsStream,
-    //     this.config
-    //   );
-    //   logger.info('Stream analyzer initialized');
+    // Initialize vision processor if OBS is connected and vision is enabled
+    if (this.services.obsStream?.isConnected() && this.config.useVision) {
+      this.visionProcessor = new VisionProcessor(
+        this.services.obsStream,
+        this.config
+      );
 
-    //   // Auto-start vision processing if enabled in config
-    //   if (this.config.useVision) {
-    //     this.startVisionProcessing(
-    //       this.config.visionSourceName,
-    //       undefined, // Use the interval from config
-    //       this.config.visionPrompt
-    //     )
-    //       .then((success) => {
-    //         if (success) {
-    //           logger.info(
-    //             `Vision processing auto-started with ${this.config.visionIntervalSeconds} second interval`
-    //           );
-    //         } else {
-    //           logger.error('Failed to auto-start vision processing');
-    //         }
-    //       })
-    //       .catch((err) => {
-    //         logger.error(
-    //           `Error auto-starting vision processing: ${err instanceof Error ? err.message : String(err)}`
-    //         );
-    //       });
-    //   }
-    // }
+      // Set up vision response handler
+      this.visionProcessor.on(
+        'visionResponse',
+        this.handleVisionResponse.bind(this)
+      );
+
+      // Start vision processing
+      const success = await this.visionProcessor.start();
+      if (success) {
+        this.useVision = true;
+        logger.info(
+          `Vision processing started with ${this.config.visionIntervalSeconds || 30} second interval`
+        );
+      } else {
+        logger.error('Failed to start vision processing');
+      }
+    }
 
     // Initialize message ingestion service if enabled
     if (this.services.messageIngestion) {
@@ -151,7 +140,7 @@ class AIPipeline {
     }
 
     logger.info('Starting thought generation with 30-second interval');
-    
+
     this.thoughtInterval = setInterval(() => {
       this.generateThoughtVideo().catch((error) => {
         logger.error(
@@ -188,7 +177,13 @@ class AIPipeline {
       return;
     }
 
-    if (!this.services.thoughtGenerator || !this.services.tts || !this.services.sync) {
+    if (
+      !(
+        this.services.thoughtGenerator &&
+        this.services.tts &&
+        this.services.sync
+      )
+    ) {
       logger.warn('Required services not available for thought generation');
       return;
     }
@@ -202,7 +197,7 @@ class AIPipeline {
     try {
       // Generate a unique thought
       const thought = await this.services.thoughtGenerator.generateThought();
-      
+
       // Create a pipeline item for tracking
       const messageId = `thought-${Date.now()}`;
       const thoughtItem: PipelineItem = {
@@ -225,7 +220,9 @@ class AIPipeline {
       };
 
       this.pipeline.set(messageId, thoughtItem);
-      logger.info(`Processing thought directly through TTS: ${thought.substring(0, 50)}...`);
+      logger.info(
+        `Processing thought directly through TTS: ${thought.substring(0, 50)}...`
+      );
 
       // Generate speech directly from thought
       const audioPath = await this.services.tts.convert(thought);
@@ -256,7 +253,6 @@ class AIPipeline {
         fs.unlinkSync(audioPath);
         fs.unlinkSync(videoPath);
       }
-
     } catch (error) {
       logger.error(
         `Error in generateThoughtVideo: ${error instanceof Error ? error.message : String(error)}`
@@ -466,162 +462,102 @@ class AIPipeline {
     return false;
   }
 
-  // /**
-  //  * Start vision processing of screenshots from OBS
-  //  * @param sourceName Name of the OBS source to capture (e.g. "Display Capture")
-  //  * @param intervalSeconds How often to capture and process screenshots (in seconds)
-  //  * @param customPrompt Optional custom prompt for vision analysis
-  //  */
-  // async startVisionProcessing(
-  //   sourceName = 'Display Capture',
-  //   intervalSeconds?: number,
-  //   customPrompt?: string
-  // ): Promise<boolean> {
-  //   if (!this.services?.obsStream?.isConnected()) {
-  //     logger.error('Cannot start vision processing: OBS is not connected');
-  //     return false;
-  //   }
+  /**
+   * Handle vision responses from the VisionProcessor - processes directly through TTS/video
+   */
+  private async handleVisionResponse(visionData: {
+    description: string;
+    response: string;
+    timestamp: string;
+  }): Promise<void> {
+    if (!(this.useVision && this.services)) {
+      return;
+    }
 
-  //   if (!this.streamAnalyzer) {
-  //     this.streamAnalyzer = new StreamAnalyzer(
-  //       this.services.obsStream,
-  //       this.config
-  //     );
-  //     logger.info('Stream analyzer initialized');
-  //   }
+    try {
+      logger.info(
+        `Vision response received: ${visionData.response.substring(0, 100)}...`
+      );
 
-  //   // Use the interval from config if not specified
-  //   const effectiveIntervalSeconds =
-  //     intervalSeconds ?? (this.config.visionIntervalSeconds || 30);
-  //   const intervalMs = effectiveIntervalSeconds * 1000;
+      // Check if we have capacity for processing
+      if (this.getActiveProcessingCount() >= (this.config.maxConcurrent || 1)) {
+        logger.info('Pipeline at capacity, skipping vision response');
+        return;
+      }
 
-  //   const success = await this.streamAnalyzer.startAnalyzing(
-  //     sourceName,
-  //     intervalMs,
-  //     customPrompt
-  //   );
+      // Create a pipeline item for tracking
+      const messageId = `vision-${Date.now()}`;
+      const visionItem: PipelineItem = {
+        messageId,
+        userId: 'vision-system',
+        message: `Vision detected: ${visionData.description}`,
+        response: visionData.response,
+        status: PipelineStatus.GENERATING_SPEECH,
+        timestamp: Date.now(),
+        updates: [
+          {
+            status: PipelineStatus.GENERATING_SPEECH,
+            timestamp: Date.now(),
+          },
+        ],
+      };
 
-  //   if (!success) {
-  //     logger.error(
-  //       `Failed to start vision processing from source "${sourceName}"`
-  //     );
-  //     return false;
-  //   }
+      this.pipeline.set(messageId, visionItem);
+      logger.info(
+        `Processing vision response directly through TTS: ${visionData.response.substring(0, 50)}...`
+      );
 
-  //   // Register for analysis events
-  //   this.streamAnalyzer.on('analysis', this.handleVisionAnalysis.bind(this));
+      // Generate speech directly from response
+      const audioPath = await this.services.tts.convert(visionData.response);
+      visionItem.audioPath = audioPath;
+      this.updateStatus(visionItem, PipelineStatus.GENERATING_VIDEO);
+      logger.info(`Generated speech for vision response at: ${audioPath}`);
 
-  //   // Clear any existing interval
-  //   if (this.visionInterval) {
-  //     clearInterval(this.visionInterval);
-  //     this.visionInterval = null;
-  //   }
+      // Generate video
+      const videoPath = await this.services.sync.process(audioPath);
+      visionItem.videoPath = videoPath;
+      this.updateStatus(visionItem, PipelineStatus.COMPLETED);
+      logger.info(`Generated video for vision response at: ${videoPath}`);
 
-  //   // Set up interval to process vision data with the same frequency
-  //   logger.info(
-  //     `Setting up vision processing interval with frequency ${intervalMs}ms`
-  //   );
-  //   this.visionInterval = setInterval(() => {
-  //     logger.info(
-  //       `Scheduled vision processing triggered at ${new Date().toISOString()}`
-  //     );
-  //     this.processLatestVisionData();
-  //   }, intervalMs);
+      // Send video to OBS
+      if (this.services.obsStream) {
+        try {
+          await this.services.obsStream.updateGeneratedVideoSource(videoPath);
+          logger.info(`Sent vision response video to OBS: ${videoPath}`);
+        } catch (obsError) {
+          logger.error(
+            `Failed to send vision video to OBS: ${obsError instanceof Error ? obsError.message : String(obsError)}`
+          );
+        }
+      }
 
-  //   this.useVision = true;
-  //   logger.info(
-  //     `Vision processing started. Will capture and generate videos every ${effectiveIntervalSeconds} seconds`
-  //   );
-  //   return true;
-  // }
+      // Clean up files
+      if (!this.config.testMode) {
+        fs.unlinkSync(audioPath);
+        fs.unlinkSync(videoPath);
+      }
+    } catch (error) {
+      logger.error(
+        `Error handling vision response: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
 
-  // /**
-  //  * Stop vision processing
-  //  */
-  // stopVisionProcessing(): void {
-  //   logger.info('Stopping vision processing...');
+  /**
+   * Stop vision processing
+   */
+  stopVisionProcessing(): void {
+    if (!this.visionProcessor) {
+      return;
+    }
 
-  //   if (this.streamAnalyzer) {
-  //     this.streamAnalyzer.stopAnalyzing();
-  //     this.streamAnalyzer.removeAllListeners('analysis');
-  //   }
-
-  //   if (this.visionInterval) {
-  //     logger.info('Clearing vision processing interval');
-  //     clearInterval(this.visionInterval);
-  //     this.visionInterval = null;
-  //   }
-
-  //   this.useVision = false;
-  //   logger.info('Vision processing stopped');
-  // }
-
-  // /**
-  //  * Handle vision analysis results
-  //  */
-  // private handleVisionAnalysis(result: StreamAnalysisResult): void {
-  //   logger.info(
-  //     `Received vision analysis: ${result.analysis.description.substring(0, 100)}...`
-  //   );
-  //   // The processLatestVisionData method will handle processing this data on the interval
-  // }
-
-  // /**
-  //  * Process the latest vision data and generate a video
-  //  */
-  // private processLatestVisionData(): void {
-  //   if (!this.streamAnalyzer) {
-  //     return;
-  //   }
-  //   if (!this.useVision) {
-  //     return;
-  //   }
-
-  //   try {
-  //     // Get the latest analysis result
-  //     const analysisResult = this.streamAnalyzer.getLastAnalysisResult();
-  //     if (!analysisResult) {
-  //       logger.warn('No analysis result available for vision processing');
-  //       return;
-  //     }
-
-  //     const description = analysisResult.analysis.description;
-  //     logger.info(
-  //       `Processing vision data: ${description.substring(0, 100)}...`
-  //     );
-
-  //     // Create a pipeline item from the vision data
-  //     const messageId = `vision-${Date.now()}`;
-  //     const visionItem: PipelineItem = {
-  //       messageId,
-  //       userId: 'vision-system',
-  //       message: `You are a livestreamer. This is what you see in the video: ${description}`,
-  //       status: PipelineStatus.RECEIVED,
-  //       timestamp: Date.now(),
-  //       updates: [
-  //         {
-  //           status: PipelineStatus.RECEIVED,
-  //           timestamp: Date.now(),
-  //         },
-  //       ],
-  //     };
-
-  //     // Add to pipeline and process
-  //     this.pipeline.set(messageId, visionItem);
-  //     logger.info(`Vision item added to pipeline: ${messageId}`);
-  //     if (this.getActiveProcessingCount() < this.config.maxConcurrent) {
-  //       this.processItem(visionItem).catch((err) =>
-  //         logger.error(
-  //           `Failed to process vision item ${messageId}: ${err instanceof Error ? err.message : String(err)}`
-  //         )
-  //       );
-  //     }
-  //   } catch (error) {
-  //     logger.error(
-  //       `Error processing vision data: ${error instanceof Error ? error.message : String(error)}`
-  //     );
-  //   }
-  // }
+    logger.info('Stopping vision processing...');
+    this.visionProcessor.stop();
+    this.visionProcessor.removeAllListeners('visionResponse');
+    this.visionProcessor = null;
+    this.useVision = false;
+    logger.info('Vision processing stopped');
+  }
 
   /**
    * Handle incoming messages from message ingestion services (e.g., PumpFun)
