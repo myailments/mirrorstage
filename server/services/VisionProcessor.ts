@@ -191,7 +191,6 @@ export class VisionProcessor extends EventEmitter {
       });
 
       const content = response.choices[0].message.content || '';
-      const hasChanged = this.detectChange(content);
 
       // Update recent descriptions
       this.recentDescriptions.push(content);
@@ -202,8 +201,8 @@ export class VisionProcessor extends EventEmitter {
       return {
         timestamp: new Date().toISOString(),
         description: content,
-        hasChanged,
-        confidence: hasChanged ? 0.8 : 0.2,
+        hasChanged: true,
+        confidence: 0.8,
       };
     } catch (error) {
       logger.error(
@@ -228,7 +227,6 @@ export class VisionProcessor extends EventEmitter {
           'deepseek/deepseek-chat-v3-0324:free'
         : 'gpt-4o-mini';
 
-      // Use the existing character system prompt
       const systemPrompt = createSystemPrompt({
         characterName: 'Threadguy',
         context:
@@ -292,51 +290,6 @@ Recent observations for context:
 ${recentContext}
 
 Describe what's currently happening in the game. Focus on the action, gameplay, and any interesting moments.`;
-  }
-
-  private detectChange(description: string): boolean {
-    // More lenient change detection to encourage commentary
-    // We want to comment on gameplay moments, not just major changes
-    const noChangeIndicators = [
-      'no significant changes',
-      'nothing has changed',
-      'same as before',
-      'paused',
-      'menu screen',
-      'loading screen',
-    ];
-
-    const lowerDesc = description.toLowerCase();
-
-    // Skip if it's clearly a non-gameplay moment
-    if (noChangeIndicators.some((indicator) => lowerDesc.includes(indicator))) {
-      return false;
-    }
-
-    // Always comment if there's action or gameplay elements mentioned
-    const actionIndicators = [
-      'zombie',
-      'shooting',
-      'weapon',
-      'enemy',
-      'player',
-      'moving',
-      'action',
-      'fighting',
-      'running',
-      'health',
-      'ammo',
-      'door',
-      'mystery box',
-      'perk',
-      'round',
-    ];
-
-    // Return true if any action is detected, or randomly (30% chance) for variety
-    return (
-      actionIndicators.some((indicator) => lowerDesc.includes(indicator)) ||
-      Math.random() < 0.3
-    );
   }
 
   private cleanupScreenshots(): void {

@@ -2,7 +2,7 @@ import type { Config } from '../types/index.js';
 
 // TTS Service interface
 export interface TTSService {
-  convert(text: string): Promise<string>;
+  convert(text: string, previousText?: string): Promise<string>;
   testConnection(): Promise<boolean>;
 }
 

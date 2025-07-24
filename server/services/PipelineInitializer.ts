@@ -13,6 +13,7 @@ import { TestTextGenerator, TextGenerator } from './TextGenerator.js';
 import { ThoughtGenerator } from './ThoughtGenerator.js';
 import { ElevenLabsTTS, TestTTS, ZonosTTS, ZonosTTSAPI } from './TTS.js';
 import {
+  FalCreatifySync,
   FalLatentSync,
   FalPixverseSync,
   LocalLatentSync,
@@ -119,6 +120,9 @@ export class PipelineInitializer {
     }
     if (this.config.useFalPixverse) {
       return new FalPixverseSync(this.config);
+    }
+    if (this.config.useFalCreatify) {
+      return new FalCreatifySync(this.config);
     }
     if (this.config.useSyncLabs) {
       return new SyncLabsSync(this.config);

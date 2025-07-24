@@ -58,7 +58,7 @@ export class ThoughtGenerator {
         ? `Previous thoughts (avoid repeating these concepts): ${this.thoughtHistory.join(', ')}`
         : '';
 
-    const context = `You're having a spontaneous thought or observation to share with your stream audience. Keep it to 1-2 sentences maximum. Be authentic and engaging. Topics can include: streaming life, technology, random observations, or philosophical musings. Each thought should be completely unique and original. ${historyContext}`;
+    const context = `You're having a spontaneous thought or observation to share with your stream audience. ${historyContext}`;
 
     return createSystemPrompt({
       characterName: 'Threadguy',

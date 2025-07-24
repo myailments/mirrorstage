@@ -21,6 +21,7 @@ export const VideoSyncService = {
   FAL_LATENT_SYNC: 'fal-latent-sync',
   SYNC_LABS: 'sync-labs',
   FAL_PIXVERSE: 'fal-pixverse',
+  FAL_CREATIFY: 'fal-creatify',
 } as const;
 
 export type VideoSyncService =
@@ -109,8 +110,11 @@ export interface Config {
 
   // FAL API Pixverse
   useFalPixverse: boolean;
+  
+  // FAL API Creatify
+  useFalCreatify: boolean;
+  
   // Sync Labs
-
   useSyncLabs: boolean;
   syncLabsKey?: string;
 

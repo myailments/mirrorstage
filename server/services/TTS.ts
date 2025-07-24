@@ -14,13 +14,13 @@ abstract class BaseTTS implements TTSService {
     this.config = config;
   }
 
-  abstract convert(text: string): Promise<string>;
+  abstract convert(text: string, previousText?: string): Promise<string>;
   abstract testConnection(): Promise<boolean>;
 }
 
 // Zonos TTS implementation (local service)
 export class ZonosTTS extends BaseTTS {
-  async convert(text: string): Promise<string> {
+  async convert(text: string, previousText?: string): Promise<string> {
     try {
       const url = `http://localhost:${this.config.zonosTtsPort}${this.config.zonosTtsEndpoint}`;
       const response = await fetch(url, {
@@ -70,7 +70,7 @@ export class ZonosTTS extends BaseTTS {
 
 // ElevenLabs TTS implementation (external API)
 export class ElevenLabsTTS extends BaseTTS {
-  async convert(text: string): Promise<string> {
+  async convert(text: string, previousText?: string): Promise<string> {
     try {
       const voiceId = this.config.elevenLabsVoiceId;
       const apiKey = this.config.elevenLabsApiKey;
@@ -89,10 +89,13 @@ export class ElevenLabsTTS extends BaseTTS {
         },
         body: JSON.stringify({
           text,
-          model_id: 'eleven_monolingual_v1',
+          model_id: 'eleven_multilingual_v2',
+          previous_text: previousText || '',
           voice_settings: {
-            stability: 0.5,
-            similarity_boost: 0.75,
+            stability: 0.3,
+            similarity_boost: 0.5,
+            style: 0.5,
+            use_speaker_boost: true,
           },
         }),
       });
@@ -182,7 +185,7 @@ export class ZonosTTSAPI extends BaseTTS {
     }
   }
 
-  async convert(text: string): Promise<string> {
+  async convert(text: string, previousText?: string): Promise<string> {
     try {
       if (!this.zyphra) {
         throw new Error('Zyphra client not initialized');
@@ -216,7 +219,7 @@ export class ZonosTTSAPI extends BaseTTS {
 
 // Test serve some audio we already have
 export class TestTTS extends BaseTTS {
-  convert(): Promise<string> {
+  convert(text: string, previousText?: string): Promise<string> {
     if (!this.config.baseAudioPath) {
       throw new Error('Base audio path not found');
     }

@@ -1379,9 +1379,7 @@ export class OBSStream {
           imageHeight: 1080,
         });
 
-        const base64Data = (response as { imageData: string }).imageData.split(
-          ','
-        )[1];
+        const base64Data = (response as any).imageData.split(',')[1];
         const buffer = Buffer.from(base64Data, 'base64');
         await fs.promises.writeFile(outputPath, buffer);
 

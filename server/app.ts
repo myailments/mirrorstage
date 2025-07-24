@@ -42,13 +42,16 @@ class AIPipeline {
   visionProcessor: VisionProcessor | null = null;
 
   /** Flag indicating if vision processing is enabled */
-  useVision = true;
+  useVision = false;
 
   /** Interval handler for thought generation */
   thoughtInterval: NodeJS.Timeout | null = null;
 
   /** Flag indicating if thought generation is enabled */
   useThoughts = false;
+
+  /** Track the last generated text for ElevenLabs TTS context */
+  lastGeneratedText = '';
 
   /** Expose pipeline status enum for external use */
   static Status = PipelineStatus;
@@ -225,10 +228,16 @@ class AIPipeline {
       );
 
       // Generate speech directly from thought
-      const audioPath = await this.services.tts.convert(thought);
+      const audioPath = await this.services.tts.convert(
+        thought,
+        this.lastGeneratedText
+      );
       thoughtItem.audioPath = audioPath;
       this.updateStatus(thoughtItem, PipelineStatus.GENERATING_VIDEO);
       logger.info(`Generated speech for thought at: ${audioPath}`);
+
+      // Update last generated text
+      this.lastGeneratedText = thought;
 
       // Generate video
       const videoPath = await this.services.sync.process(audioPath);
@@ -355,9 +364,15 @@ class AIPipeline {
 
       // Generate speech
       this.updateStatus(item, PipelineStatus.GENERATING_SPEECH);
-      const audioPath = await this.services.tts.convert(response);
+      const audioPath = await this.services.tts.convert(
+        response,
+        this.lastGeneratedText
+      );
       item.audioPath = audioPath;
       logger.info(`Generated speech at: ${audioPath}`);
+
+      // Update last generated text
+      this.lastGeneratedText = response;
 
       // Generate video
       this.updateStatus(item, PipelineStatus.GENERATING_VIDEO);
@@ -508,10 +523,16 @@ class AIPipeline {
       );
 
       // Generate speech directly from response
-      const audioPath = await this.services.tts.convert(visionData.response);
+      const audioPath = await this.services.tts.convert(
+        visionData.response,
+        this.lastGeneratedText
+      );
       visionItem.audioPath = audioPath;
       this.updateStatus(visionItem, PipelineStatus.GENERATING_VIDEO);
       logger.info(`Generated speech for vision response at: ${audioPath}`);
+
+      // Update last generated text
+      this.lastGeneratedText = visionData.response;
 
       // Generate video
       const videoPath = await this.services.sync.process(audioPath);

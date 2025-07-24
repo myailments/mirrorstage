@@ -48,6 +48,9 @@ const getVideoSyncService = (): VideoSyncService => {
   if (process.env.USE_FAL_PIXVERSE === 'true') {
     return VideoSyncService.FAL_PIXVERSE;
   }
+  if (process.env.USE_FAL_CREATIFY === 'true') {
+    return VideoSyncService.FAL_CREATIFY;
+  }
   return VideoSyncService.LOCAL; // default
 };
 
@@ -114,6 +117,9 @@ const config: Config = {
 
   // FAL API Pixverse
   useFalPixverse: selectedServices.videoSync === VideoSyncService.FAL_PIXVERSE,
+
+  // FAL API Creatify
+  useFalCreatify: selectedServices.videoSync === VideoSyncService.FAL_CREATIFY,
 
   // Sync Labs
   useSyncLabs: selectedServices.videoSync === VideoSyncService.SYNC_LABS,
@@ -193,6 +199,12 @@ const validateConfig = (cfg: Config) => {
     !cfg.falApiKey
   ) {
     throw new Error('FAL API key is required when using FAL Pixverse');
+  }
+  if (
+    cfg.selectedServices.videoSync === VideoSyncService.FAL_CREATIFY &&
+    !cfg.falApiKey
+  ) {
+    throw new Error('FAL API key is required when using FAL Creatify');
   }
 };
 
