@@ -2,14 +2,14 @@ import { OpenAI } from 'openai';
 import { createSystemPrompt } from '../prompts/system-prompt.js';
 import type { Config } from '../types/index.js';
 import { logger } from '../utils/logger.js';
+import type { ConversationMemory } from './ConversationMemory.js';
 
 export class ThoughtGenerator {
   private config: Config;
   private openai?: OpenAI;
   private openRouter?: OpenAI;
   private useOpenRouter: boolean;
-  private thoughtHistory: string[] = [];
-  private maxHistorySize = 10;
+  private conversationMemory?: ConversationMemory;
 
   constructor(config: Config) {
     this.config = config;
@@ -33,6 +33,13 @@ export class ThoughtGenerator {
     }
   }
 
+  /**
+   * Set the conversation memory instance
+   */
+  setConversationMemory(memory: ConversationMemory): void {
+    this.conversationMemory = memory;
+  }
+
   async generateThought(): Promise<string> {
     const systemPrompt = this.createThoughtSystemPrompt();
 
@@ -41,7 +48,6 @@ export class ThoughtGenerator {
         ? await this.generateWithOpenRouter(systemPrompt)
         : await this.generateWithOpenAI(systemPrompt);
 
-      this.addToHistory(thought);
       logger.info(`Generated thought: ${thought.substring(0, 50)}...`);
       return thought;
     } catch (error) {
@@ -53,12 +59,49 @@ export class ThoughtGenerator {
   }
 
   private createThoughtSystemPrompt(): string {
-    const historyContext =
-      this.thoughtHistory.length > 0
-        ? `Previous thoughts (avoid repeating these concepts): ${this.thoughtHistory.join(', ')}`
-        : '';
+    let conversationContext = '';
+    let thoughtGuidance =
+      "You're having a spontaneous thought or observation to share with your stream audience.";
 
-    const context = `You're having a spontaneous thought or observation to share with your stream audience. ${historyContext}`;
+    if (this.conversationMemory) {
+      // Get recent thoughts to avoid repetition
+      const recentThoughts = this.conversationMemory.getRecentInteractions(
+        5,
+        'thought'
+      );
+      const recentTopics = recentThoughts
+        .map((t) => t.content.substring(0, 50))
+        .join(', ');
+
+      // Get conversation analytics
+      const analytics = this.conversationMemory.analyzeConversation(20);
+
+      // Build dynamic guidance
+      if (recentThoughts.length > 0) {
+        thoughtGuidance += `\n\nRecent thoughts to avoid repeating: ${recentTopics}`;
+      }
+
+      if (analytics.conversationFlow === 'response-heavy') {
+        thoughtGuidance += '\n\nShare something unexpected or philosophical.';
+      }
+
+      if (analytics.overusedPhrases.length > 0) {
+        thoughtGuidance += `\n\nAvoid these phrases: ${analytics.overusedPhrases.slice(0, 3).join(', ')}`;
+      }
+
+      // Add dynamic length guidance for thoughts
+      const randomFactor = Math.random();
+      if (randomFactor < 0.4) {
+        thoughtGuidance += '\n\nKeep this thought brief and punchy.';
+      } else if (randomFactor > 0.7) {
+        thoughtGuidance += '\n\nElaborate on this thought with some detail.';
+      }
+
+      // Get broader conversation context
+      conversationContext = this.conversationMemory.formatContextForPrompt(10);
+    }
+
+    const context = `${thoughtGuidance}\n\n${conversationContext}`;
 
     return createSystemPrompt({
       characterName: 'Threadguy',
@@ -66,7 +109,7 @@ export class ThoughtGenerator {
       roleDescription:
         'You are sharing a spontaneous thought with your livestream audience',
       responseStyle:
-        'Keep it brief, natural, and conversational - like a quick observation you want to share',
+        'Keep it brief, natural, and conversational - like a quick observation you want to share. Be creative and avoid repetition.',
     });
   }
 
@@ -124,13 +167,6 @@ export class ThoughtGenerator {
     }
 
     return response;
-  }
-
-  private addToHistory(thought: string): void {
-    this.thoughtHistory.push(thought);
-    if (this.thoughtHistory.length > this.maxHistorySize) {
-      this.thoughtHistory.shift();
-    }
   }
 
   private getFallbackThought(): string {

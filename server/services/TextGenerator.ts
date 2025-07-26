@@ -2,11 +2,14 @@ import { OpenAI } from 'openai';
 import { createSystemPrompt } from '../prompts/system-prompt.js';
 import type { Config } from '../types/index.js';
 import { logger } from '../utils/logger.js';
+import type { ConversationMemory } from './ConversationMemory.js';
+
 export class TextGenerator {
   private config: Config;
   private openai?: OpenAI;
   private openRouter?: OpenAI;
   private useOpenRouter: boolean;
+  private conversationMemory?: ConversationMemory;
 
   constructor(config: Config) {
     this.config = config;
@@ -31,14 +34,76 @@ export class TextGenerator {
   }
 
   /**
+   * Set the conversation memory instance
+   */
+  setConversationMemory(memory: ConversationMemory): void {
+    this.conversationMemory = memory;
+  }
+
+  /**
    * Generate a response to user input
    */
-  async generateText(userInput: string, context?: string[]): Promise<string> {
+  async generateText(
+    userInput: string,
+    context?: string[],
+    userId?: string
+  ): Promise<string> {
+    // Get conversation context and analytics
+    let conversationContext = '';
+    let dynamicGuidance = '';
+
+    if (this.conversationMemory) {
+      conversationContext = this.conversationMemory.formatContextForPrompt(
+        20,
+        userId
+      );
+      const analytics = this.conversationMemory.analyzeConversation(30);
+
+      // Add dynamic guidance based on analytics
+      if (analytics.repetitionScore > 0.5) {
+        dynamicGuidance = '\nBe creative and explore new ideas. ';
+      }
+      if (analytics.conversationFlow === 'thought-heavy') {
+        dynamicGuidance += 'Focus on responding directly to the user. ';
+      }
+
+      // Add dynamic response length guidance
+      const recentResponses = this.conversationMemory.getRecentInteractions(
+        3,
+        'bot_response'
+      );
+      const avgLength =
+        recentResponses.length > 0
+          ? recentResponses.reduce((sum, r) => sum + r.content.length, 0) /
+            recentResponses.length
+          : 100;
+
+      // Vary response length to be more human-like
+      const randomFactor = Math.random();
+      if (avgLength > 200) {
+        // Recent responses were long, make this one shorter
+        dynamicGuidance +=
+          '\nKeep this response brief and concise - just a sentence or two. ';
+      } else if (avgLength < 50) {
+        // Recent responses were short, make this one longer
+        dynamicGuidance +=
+          '\nElaborate more in this response - share some details or examples. ';
+      } else if (randomFactor < 0.3) {
+        // 30% chance for a very short response
+        dynamicGuidance += '\nGive a quick, casual response. ';
+      } else if (randomFactor > 0.7) {
+        // 30% chance for a longer response
+        dynamicGuidance += '\nShare a bit more detail or tell a brief story. ';
+      }
+    } else if (context) {
+      // Fallback to old context format
+      conversationContext = `Recent messages:\n${context.join('\n')}\n\n`;
+    }
+
     // Create system prompt with configurable parameters
     const systemPrompt = createSystemPrompt({
       characterName: 'Threadguy',
-      context:
-        'Your text will be turned into a talking head video, so keep it short and concise.',
+      context: `Your text will be turned into a talking head video, so keep it short and concise. ${dynamicGuidance}\n\n${conversationContext}`,
       roleDescription:
         'You are a livestreamer as part of an AI pipeline. Respond naturally and engage with the audience.',
       responseStyle:
@@ -47,11 +112,7 @@ export class TextGenerator {
 
     try {
       if (this.useOpenRouter) {
-        return await this.generateWithOpenRouter(
-          userInput,
-          systemPrompt,
-          context
-        );
+        return await this.generateWithOpenRouter(userInput, systemPrompt);
       }
       return await this.generateWithOpenAI(userInput, systemPrompt);
     } catch (error) {
@@ -97,8 +158,7 @@ export class TextGenerator {
 
   private async generateWithOpenRouter(
     userInput: string,
-    systemPrompt: string,
-    context?: string[]
+    systemPrompt: string
   ): Promise<string> {
     if (!this.openRouter) {
       throw new Error('OpenRouter client not initialized');
@@ -113,9 +173,7 @@ export class TextGenerator {
       messages: [
         {
           role: 'system',
-          content:
-            systemPrompt +
-            (context ? `\n\nContext: ${context.join('\n')}` : ''),
+          content: systemPrompt,
         },
         {
           role: 'user',

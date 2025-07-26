@@ -74,7 +74,7 @@ const config: Config = {
   // Queue configuration
   minQueueSize: Number.parseInt(process.env.MIN_QUEUE_SIZE || '3', 10),
   maxQueueSize: Number.parseInt(process.env.MAX_QUEUE_SIZE || '10', 10),
-  maxConcurrent: Number.parseInt(process.env.MAX_CONCURRENT || '4', 10),
+  maxConcurrent: Number.parseInt(process.env.MAX_CONCURRENT || '10', 10),
   minPriority: Number.parseInt(process.env.MIN_PRIORITY || '3', 10),
   // Text Generation (LLM) Configuration
   // OpenRouter

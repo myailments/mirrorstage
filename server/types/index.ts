@@ -110,10 +110,10 @@ export interface Config {
 
   // FAL API Pixverse
   useFalPixverse: boolean;
-  
+
   // FAL API Creatify
   useFalCreatify: boolean;
-  
+
   // Sync Labs
   useSyncLabs: boolean;
   syncLabsKey?: string;

@@ -2,6 +2,7 @@ import 'dotenv/config';
 import fs from 'node:fs';
 import express from 'express';
 import config from './config';
+import { ConversationMemory } from './services/ConversationMemory';
 import {
   PipelineInitializer,
   type PipelineServices,
@@ -53,6 +54,9 @@ class AIPipeline {
   /** Track the last generated text for ElevenLabs TTS context */
   lastGeneratedText = '';
 
+  /** Conversation memory for tracking all interactions */
+  conversationMemory: ConversationMemory;
+
   /** Expose pipeline status enum for external use */
   static Status = PipelineStatus;
 
@@ -62,6 +66,12 @@ class AIPipeline {
       testMode: false,
     };
     this.pipeline = new Map<string, PipelineItem>();
+    this.conversationMemory = new ConversationMemory(
+      1000,
+      100,
+      './data',
+      this.config
+    );
   }
 
   /**
@@ -70,6 +80,16 @@ class AIPipeline {
   async initialize(): Promise<boolean> {
     const initializer = new PipelineInitializer(this.config);
     this.services = await initializer.initialize();
+
+    // Set conversation memory for text and thought generators
+    if (this.services) {
+      this.services.textGenerator.setConversationMemory(
+        this.conversationMemory
+      );
+      this.services.thoughtGenerator.setConversationMemory(
+        this.conversationMemory
+      );
+    }
 
     // Initialize vision processor if OBS is connected and vision is enabled
     if (this.services.obsStream?.isConnected() && this.config.useVision) {
@@ -201,6 +221,9 @@ class AIPipeline {
       // Generate a unique thought
       const thought = await this.services.thoughtGenerator.generateThought();
 
+      // Track thought in conversation memory
+      await this.conversationMemory.addEntry('thought', thought);
+
       // Create a pipeline item for tracking
       const messageId = `thought-${Date.now()}`;
       const thoughtItem: PipelineItem = {
@@ -275,6 +298,13 @@ class AIPipeline {
   handleUserInput(userId: string, message: string): InputResponse {
     const messageId = `${userId}-${Date.now()}`;
 
+    // Track user message in conversation memory asynchronously (don't block)
+    this.conversationMemory
+      .addEntry('user_message', message, userId)
+      .catch((err) =>
+        logger.error(`Failed to add user message to memory: ${err}`)
+      );
+
     // Create pipeline item
     const pipelineItem: PipelineItem = {
       messageId,
@@ -341,26 +371,33 @@ class AIPipeline {
 
       // Evaluate
       this.updateStatus(item, PipelineStatus.EVALUATING);
+      logger.info(`Evaluating message: ${item.message}`);
       const evaluations = await this.services.evaluator.evaluateInputs([item]);
       const evaluation = evaluations[0];
+      logger.info(
+        `Evaluation priority: ${evaluation.priority}, min required: ${this.config.minPriority}`
+      );
       if (evaluation.priority < this.config.minPriority) {
         this.updateStatus(item, PipelineStatus.REJECTED);
         return;
       }
 
       // Generate response using the service
-      // Add the last 5 messages to the context
-      const lastMessages = Array.from(this.pipeline.values())
-        .filter((i) => i.status === PipelineStatus.COMPLETED)
-        .map((i) => i.message)
-        .slice(-5);
       this.updateStatus(item, PipelineStatus.GENERATING_RESPONSE);
       const response = await this.services.textGenerator.generateText(
         item.message,
-        lastMessages
+        undefined,
+        item.userId
       );
       item.response = response;
       logger.info(`Generated response: ${response}`);
+
+      // Track bot response in conversation memory
+      await this.conversationMemory.addEntry(
+        'bot_response',
+        response,
+        item.userId
+      );
 
       // Generate speech
       this.updateStatus(item, PipelineStatus.GENERATING_SPEECH);
@@ -499,6 +536,14 @@ class AIPipeline {
         logger.info('Pipeline at capacity, skipping vision response');
         return;
       }
+
+      // Track vision observation in conversation memory
+      await this.conversationMemory.addEntry(
+        'vision_observation',
+        visionData.response,
+        undefined,
+        { description: visionData.description }
+      );
 
       // Create a pipeline item for tracking
       const messageId = `vision-${Date.now()}`;

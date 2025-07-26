@@ -150,6 +150,10 @@ logs/
 *.mp4
 *.wav
 
+# Data files containing user conversations and memory
+data/
+conversation-memory.json
+
 # IDE specific files
 .vscode/
 .idea/

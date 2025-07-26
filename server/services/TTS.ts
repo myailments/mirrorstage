@@ -4,6 +4,7 @@ import { ZyphraClient as Zyphra } from '@zyphra/client';
 import fetch from 'node-fetch';
 import type { Config } from '../types/index.js';
 import { logger } from '../utils/logger.js';
+import type { ConversationMemory } from './ConversationMemory.js';
 import type { TTSService } from './interfaces.js';
 
 // Base TTS class
@@ -20,7 +21,7 @@ abstract class BaseTTS implements TTSService {
 
 // Zonos TTS implementation (local service)
 export class ZonosTTS extends BaseTTS {
-  async convert(text: string, previousText?: string): Promise<string> {
+  async convert(text: string, _previousText?: string): Promise<string> {
     try {
       const url = `http://localhost:${this.config.zonosTtsPort}${this.config.zonosTtsEndpoint}`;
       const response = await fetch(url, {
@@ -70,6 +71,12 @@ export class ZonosTTS extends BaseTTS {
 
 // ElevenLabs TTS implementation (external API)
 export class ElevenLabsTTS extends BaseTTS {
+  private conversationMemory?: ConversationMemory;
+
+  setConversationMemory(memory: ConversationMemory): void {
+    this.conversationMemory = memory;
+  }
+
   async convert(text: string, previousText?: string): Promise<string> {
     try {
       const voiceId = this.config.elevenLabsVoiceId;
@@ -185,7 +192,7 @@ export class ZonosTTSAPI extends BaseTTS {
     }
   }
 
-  async convert(text: string, previousText?: string): Promise<string> {
+  async convert(text: string, _previousText?: string): Promise<string> {
     try {
       if (!this.zyphra) {
         throw new Error('Zyphra client not initialized');
@@ -219,7 +226,7 @@ export class ZonosTTSAPI extends BaseTTS {
 
 // Test serve some audio we already have
 export class TestTTS extends BaseTTS {
-  convert(text: string, previousText?: string): Promise<string> {
+  convert(_text: string, _previousText?: string): Promise<string> {
     if (!this.config.baseAudioPath) {
       throw new Error('Base audio path not found');
     }
