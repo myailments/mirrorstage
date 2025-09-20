@@ -108,6 +108,7 @@ export class TextGenerator {
         'You are a livestreamer as part of an AI pipeline. Respond naturally and engage with the audience.',
       responseStyle:
         'Be sure to emphasize the use of tone, but not style. Your responses should be formatted to be machine-readable and read aloud by an AI voice. Do not use markdown or other formatting. Just plain text.',
+      useElevenLabsV3: this.config.useElevenLabs, // Enable v3 instructions when using ElevenLabs
     });
 
     try {

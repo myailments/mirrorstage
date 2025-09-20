@@ -138,7 +138,7 @@ export class ConversationMemory extends EventEmitter {
 
       if (this.config?.useOpenRouter && this.openRouter) {
         const completion = await this.openRouter.chat.completions.create({
-          model: 'deepseek/deepseek-chat-v3-0324:free', // Fast and cheap
+          model: 'gpt-4o-mini', // Fast and cheap
           messages: [{ role: 'user', content: prompt }],
           max_tokens: 50,
           temperature: 0.3,
@@ -164,7 +164,9 @@ export class ConversationMemory extends EventEmitter {
 
       return topics;
     } catch (error) {
-      logger.error(`Failed to extract topics: ${error}`);
+      logger.error(
+        `Failed to extract topics: ${error}. Provider: ${this.config?.useOpenRouter ? 'OpenRouter' : 'OpenAI'}`
+      );
       return [];
     }
   }

@@ -96,12 +96,12 @@ export class ElevenLabsTTS extends BaseTTS {
         },
         body: JSON.stringify({
           text,
-          model_id: 'eleven_multilingual_v2',
-          previous_text: previousText || '',
+          model_id: 'eleven_v3', // Use v3 when available in your account
+          // previous_text: previousText || '',
           voice_settings: {
-            stability: 0.3,
+            stability: 0.5, // [0.0, 0.5, 1.0] (0.0 = Creative, 0.5 = Natural, 1.0 = Robust)
             similarity_boost: 0.5,
-            style: 0.5,
+            style: 0.6, // Higher style for more character expression
             use_speaker_boost: true,
           },
         }),
