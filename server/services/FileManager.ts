@@ -38,20 +38,6 @@ export class FileManager {
   }
 
   /**
-   * Get speaker audio file
-   */
-  verifyBaseAudio(): void {
-    const baseAudioPath = this.config.baseAudioPath;
-    if (!baseAudioPath) {
-      throw new Error('Base audio path is not defined in config');
-    }
-    if (!fs.existsSync(baseAudioPath)) {
-      throw new Error(`Base audio not found at ${baseAudioPath}`);
-    }
-    logger.info(`Verified base audio at ${baseAudioPath}`);
-  }
-
-  /**
    * Save audio file
    */
   saveAudio(buffer: Buffer, format = 'wav'): string {

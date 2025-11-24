@@ -1,169 +1,250 @@
 # mirrorstage
 
-mirrorstage is a one-shot AI livestreaming platform that creates automated talking head videos in response to user input or chat messages.
+mirrorstage is a one-shot AI livestreaming service
 
 ## features
 
-- **modular service architecture** - swap between different LLM, TTS, and video sync providers
+- **unified AI pipeline** - Inworld AI handles both text generation and TTS in a single optimized flow
 - **real-time chat ingestion** - automatically responds to pump.fun chat messages
-- **obs integration** - seamless streaming with dynamic video switching
+- **OBS integration** - seamless streaming with dynamic video switching
 - **concurrent processing** - handles multiple requests with configurable queue limits
-- **vision analysis** - can analyze screenshots from obs (currently disabled)
 - **character customization** - define custom AI personalities and prompts
+- **lip-sync video generation** - FAL API creates talking head videos from audio
 
-## supported services
+## architecture
 
-### text generation (llm)
+```
+input → evaluation → Inworld AI (LLM + TTS) → FAL video sync → OBS stream
+  ↓         ↓              ↓                       ↓              ↓
+cli/chat  priority     text + audio            talking head   broadcast
+          filter       generation              video
+```
 
-- openai
-- openrouter
+The pipeline uses:
 
-### text-to-speech (tts)
+- **Inworld AI Runtime SDK** - Graph-based LLM + TTS pipeline
+- **FAL LatentSync** - Audio-driven lip-sync video generation
+- **OBS WebSocket** - Live stream control and video switching
 
-- zonos (local/api)
-- elevenlabs
+## quick start
 
-### video synchronization
-
-- latentsync (local)
-- fal api (latentsync/pixverse)
-- sync labs
-
-## how to use
-
-1. clone this repo
-
-2. install dependencies
+1. **Clone and install**
 
    ```bash
+   git clone <repo-url>
+   cd stream-service
    npm install
-   # or
-   yarn install
    ```
 
-3. set up assets
+2. **Set up assets**
 
-   - add `base_video.mp4` to `_assets/` (30 seconds, front-facing human, minimal movement)
-   - add `base_audio.wav` to `_assets/` (voice sample for tts reference)
+   Add a base video to `assets/base_video.mp4`:
 
-4. configure character
+   - 30 seconds recommended
+   - Front-facing human subject
+   - Minimal head movement
+   - Good lighting
 
-   - edit `server/prompts/character-file.ts` to define your AI personality
-
-5. set up environment
+3. **Configure environment**
 
    ```bash
    cp .env.example .env
-   # edit .env with your api keys and configuration
    ```
 
-6. configure obs
+   Edit `.env` with your API keys:
 
-   - install obs studio
-   - enable websocket server in obs (tools → websocket server settings)
-   - default port: 4455
-   - set password if desired (update in .env)
-
-7. run the service
    ```bash
+   # Required
+   INWORLD_API_KEY=your-inworld-api-key
+   FAL_KEY=your-fal-api-key
+
+   # Optional - Inworld voice (default: Dennis)
+   INWORLD_VOICE_ID=Dennis
+
+   # OBS WebSocket
+   OBS_WEBSOCKET_HOST=localhost
+   OBS_WEBSOCKET_PORT=4455
+   OBS_WEBSOCKET_PASSWORD=your-password
+   ```
+
+4. **Configure OBS**
+
+   - Install OBS Studio
+   - Enable WebSocket server: Tools → WebSocket Server Settings
+   - Default port: 4455
+   - Set password if desired
+
+5. **Customize character**
+
+   Edit `server/prompts/character-file.ts` to define your AI personality.
+
+6. **Run**
+
+   ```bash
+   # Development
    npm run dev
-   # or for production
+
+   # CLI mode (for testing)
+   npm run cli:dev
+
+   # Test mode (skip video sync)
+   TEST_MODE=true npm run cli:dev
+
+   # Production
    npm run build && npm start
    ```
 
 ## configuration
 
-key environment variables:
+### environment variables
 
 ```bash
+# Inworld AI
+INWORLD_API_KEY=           # Required - Inworld API key
+INWORLD_VOICE_ID=Dennis    # Optional - Voice for TTS
 
-# api keys
-OPENAI_API_KEY=your-key
-ELEVENLABS_API_KEY=your-key
-FAL_KEY=your-key
+# FAL API
+FAL_KEY=                   # Required - FAL API key for video sync
 
-# obs configuration
-OBS_WEBSOCKET_URL=ws://localhost:4455
-OBS_WEBSOCKET_PASSWORD=your-password
+# OBS WebSocket
+OBS_WEBSOCKET_HOST=localhost
+OBS_WEBSOCKET_PORT=4455
+OBS_WEBSOCKET_PASSWORD=
 
-# file paths
-BASE_VIDEO_PATH=./_assets/base_video.mp4
-BASE_AUDIO_PATH=./_assets/base_audio.wav
-OUTPUT_DIR=./_outputs
+# File paths
+BASE_VIDEO_PATH=./assets/base_video.mp4
+OUTPUT_DIR=./generated_videos
 
-# processing settings
-PIPELINE_CONCURRENT_LIMIT=2
+# Processing
+MAX_CONCURRENT=10
+MIN_QUEUE_SIZE=3
 MAX_QUEUE_SIZE=10
+MIN_PRIORITY=3             # Messages below this priority are rejected
+
+# Chat ingestion (optional)
+USE_PUMP_FUN=false
+PUMP_FUN_URL=
+
+# Testing
+TEST_MODE=false            # Skip video sync and OBS
 ```
+
+### message priority
+
+Messages are evaluated and assigned a priority score (0-10):
+
+- Questions (`?`) → priority 8
+- Engagement keywords (hey, hi, what, how, etc.) → priority 7
+- Short messages (<5 chars) → priority 2
+- Default → priority 5
+
+Messages below `MIN_PRIORITY` are rejected.
 
 ## usage modes
 
-### cli mode
+### CLI mode
 
 ```bash
 npm run cli:dev
-# type messages directly to test the pipeline
 ```
 
-### chat ingestion mode
+Type messages directly to test the pipeline without chat ingestion.
+
+### Test mode
 
 ```bash
-# set PUMP_FUN_URL in .env
-# the service will automatically monitor pump.fun chat
+TEST_MODE=true npm run cli:dev
 ```
 
-## architecture
+Skips video sync and OBS - useful for testing Inworld AI responses.
+
+### Chat ingestion
+
+```bash
+# In .env
+USE_PUMP_FUN=true
+PUMP_FUN_URL=https://pump.fun/coin/your-token
+```
+
+Automatically monitors pump.fun chat and responds to messages.
+
+## project structure
 
 ```
-input sources → evaluation → text generation → tts → video sync → obs stream
-     ↓              ↓             ↓              ↓         ↓           ↓
-  cli/chat    priority filter   llm api      audio     talking    broadcast
-                               response    generation    head
+stream-service/
+├── server/
+│   ├── app.ts                    # Main pipeline orchestrator
+│   ├── config.ts                 # Configuration management
+│   ├── services/
+│   │   ├── InworldService.ts     # Unified LLM + TTS via Inworld AI
+│   │   ├── VideoSync.ts          # FAL LatentSync video generation
+│   │   ├── OBSStream.ts          # OBS WebSocket integration
+│   │   ├── PipelineInitializer.ts
+│   │   ├── PumpFunMessages.ts    # Chat ingestion
+│   │   ├── FileManager.ts        # File I/O utilities
+│   │   └── interfaces.ts         # Service interfaces
+│   ├── prompts/
+│   │   ├── character-file.ts     # AI personality definition
+│   │   └── system-prompt.ts      # System prompt builder
+│   ├── types/
+│   │   └── index.ts              # TypeScript types
+│   └── utils/
+│       ├── logger.ts             # Logging utility
+│       └── strings.ts            # String helpers
+├── assets/                       # Base video files
+├── generated_videos/             # Output directory
+└── package.json
 ```
 
 ## development
 
-### project structure
-
-```
-mirrorstage/
-├── server/
-│   ├── app.ts              # main pipeline orchestrator
-│   ├── config.ts           # configuration management
-│   ├── services/           # modular service implementations
-│   │   ├── interfaces.ts   # service interfaces
-│   │   ├── OBSStream.ts    # obs integration
-│   │   ├── PipelineInitializer.ts
-│   │   └── ...
-│   ├── prompts/            # ai prompts and character definitions
-│   └── utils/              # utilities and helpers
-├── _assets/                # base video/audio files
-├── _outputs/               # generated content
-└── package.json
-```
-
-### adding new services
-
-1. implement the appropriate interface from `server/services/interfaces.ts`
-2. add service initialization in `PipelineInitializer.ts`
-3. update environment configuration in `config.ts`
-
-### linting
+### commands
 
 ```bash
-npm run lint
+npm run dev          # Development server with hot reload
+npm run cli:dev      # CLI mode for testing
+npm run build        # Build for production
+npm run start        # Run production build
+npm run typecheck    # TypeScript type checking
+npm run lint         # Run Biome linter
+```
+
+### adding custom voices
+
+Inworld AI supports various voices. Set `INWORLD_VOICE_ID` in your `.env`:
+
+```bash
+INWORLD_VOICE_ID=Dennis    # Default male voice
+INWORLD_VOICE_ID=Rachel    # Female voice
+# See Inworld TTS Playground for more options
 ```
 
 ## troubleshooting
 
-### obs connection issues
+### Inworld authentication errors
 
-- ensure obs websocket server is enabled
-- check port and password match your .env settings
-- verify obs is running before starting the service
+- Verify `INWORLD_API_KEY` is set correctly
+- Run `npx inworld login` to authenticate via browser
+- Check your Inworld dashboard for API key status
 
-### video generation failures
+### OBS connection issues
 
-- check api keys are valid
-- ensure base video/audio files exist
-- verify output directory has write permissions
+- Ensure OBS WebSocket server is enabled
+- Verify port and password match your `.env` settings
+- Start OBS before running the service
+
+### Video generation failures
+
+- Check FAL API key is valid
+- Ensure base video exists at configured path
+- Verify output directory has write permissions
+
+### Audio issues
+
+- Inworld TTS returns 32-bit IEEE 754 float audio at 48kHz
+- Audio is automatically converted to WAV format
+- Check `INWORLD_VOICE_ID` for voice availability
+
+## license
+
+MIT

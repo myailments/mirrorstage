@@ -1,46 +1,12 @@
 // Core types for the application
 
-// Service type enums
-export const LLMService = {
-  OPENROUTER: 'openrouter',
-  OPENAI: 'openai',
-} as const;
-
-export type LLMService = (typeof LLMService)[keyof typeof LLMService];
-
-export const TTSService = {
-  ZONOS_LOCAL: 'zonos-local',
-  ZONOS_API: 'zonos-api',
-  ELEVENLABS: 'elevenlabs',
-} as const;
-
-export type TTSService = (typeof TTSService)[keyof typeof TTSService];
-
-export const VideoSyncService = {
-  LOCAL: 'local',
-  FAL_LATENT_SYNC: 'fal-latent-sync',
-  SYNC_LABS: 'sync-labs',
-  FAL_PIXVERSE: 'fal-pixverse',
-  FAL_CREATIFY: 'fal-creatify',
-} as const;
-
-export type VideoSyncService =
-  (typeof VideoSyncService)[keyof typeof VideoSyncService];
-
+// Message ingestion service types
 export const MessageIngestionServiceType = {
   PUMP_FUN: 'pump-fun',
 } as const;
 
 export type MessageIngestionServiceType =
   (typeof MessageIngestionServiceType)[keyof typeof MessageIngestionServiceType];
-
-// Selected services configuration
-export interface SelectedServices {
-  llm: LLMService;
-  tts: TTSService;
-  videoSync: VideoSyncService;
-  messageIngestion?: MessageIngestionServiceType;
-}
 
 // Configuration type
 export interface Config {
@@ -52,7 +18,6 @@ export interface Config {
   // File paths
   baseVideoPath: string;
   outputDir: string;
-  baseAudioPath: string;
 
   // Queue configuration
   minQueueSize: number;
@@ -67,56 +32,12 @@ export interface Config {
   visionIntervalSeconds?: number;
   visionPrompt?: string;
 
-  // Service Selection
-  selectedServices: SelectedServices;
+  // Inworld AI Configuration
+  inworldApiKey?: string;
+  inworldVoiceId?: string;
 
-  // LLM Configuration
-  // OpenRouter
-  useOpenRouter: boolean;
-  openRouterApiKey?: string;
-  openRouterGenerationModel?: string;
-  openRouterEvaluationModel?: string;
-  openRouterSiteUrl?: string;
-  openRouterSiteName?: string;
-
-  // OpenAI
-  openaiApiKey?: string;
-
-  // TTS Configuration
-  // Zonos Local
-  useZonosTTSLocal: boolean;
-  zonosTtsEndpoint: string;
-  zonosTtsPort: number;
-
-  // Zonos API
-  useZonosTTSAPI: boolean;
-  zonosApiKey?: string;
-
-  // ElevenLabs
-  useElevenLabs: boolean;
-  elevenLabsApiKey?: string;
-  elevenLabsVoiceId?: string;
-
-  // Video Sync Configuration
-  // Local LatentSync
-  latentsyncEndpoint: string;
-  latentSyncPort: number;
-
-  // FAL API
+  // FAL API Configuration (Video Sync)
   falApiKey?: string;
-
-  // FAL API LatentSync
-  useFalLatentSync: boolean;
-
-  // FAL API Pixverse
-  useFalPixverse: boolean;
-
-  // FAL API Creatify
-  useFalCreatify: boolean;
-
-  // Sync Labs
-  useSyncLabs: boolean;
-  syncLabsKey?: string;
 
   // Message Ingestion Configuration
   // Pump.fun
@@ -124,29 +45,19 @@ export interface Config {
   pumpFunUrl?: string;
   pumpFunHeadless?: boolean;
 
-  // Media Stream Configuration
-  // OBS WebSocket
+  // OBS WebSocket Configuration
   obsWebSocketHost: string;
   obsWebSocketPort: number;
   obsWebSocketPassword?: string;
-  obsWebSocketTimeout?: number; // Connection timeout in milliseconds (default: 10000)
-  obsWebSocketMaxRetries?: number; // Maximum connection retries (default: 3)
-  obsWebSocketRetryDelay?: number; // Delay between retries in milliseconds (default: 5000)
+  obsWebSocketTimeout?: number;
+  obsWebSocketMaxRetries?: number;
+  obsWebSocketRetryDelay?: number;
   obsBaseSceneName: string;
   obsGeneratedSceneName: string;
   obsGeneratedSourceName: string;
 
   // Test mode
   testMode?: boolean;
-
-  supabaseUrl?: string;
-  supabaseKey?: string;
-
-  // AWS Configuration
-  awsRegion?: string;
-  awsAccessKeyId?: string;
-  awsSecretAccessKey?: string;
-  awsBucketName?: string;
 }
 
 // Pipeline Item Status
@@ -212,51 +123,6 @@ export interface PipelineStatusSummary {
 export interface InputResponse {
   messageId: string;
   status: PipelineStatus;
-}
-
-// Stream analysis types
-
-export const StreamAnalysisService = {
-  GPT_VISION: 'gpt-vision',
-  CLAUDE: 'claude',
-  GOOGLE_VISION: 'google-vision',
-} as const;
-
-export type StreamAnalysisService =
-  (typeof StreamAnalysisService)[keyof typeof StreamAnalysisService];
-
-export interface StreamAnalysisResult {
-  timestamp: string;
-  imagePath: string;
-  analysis: {
-    description: string;
-    confidence?: number;
-    detectedObjects?: DetectedObject[];
-    detectedText?: string;
-    model: string;
-    tokensUsed?: number;
-  };
-}
-
-export interface DetectedObject {
-  name: string;
-  confidence: number;
-  boundingBox?: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
-}
-
-export interface StreamAnalysisConfig {
-  enabled: boolean;
-  service: StreamAnalysisService;
-  captureSource: string;
-  captureFrequencyMs: number;
-  analysisPrompt: string;
-  saveScreenshots: boolean;
-  maxStoredScreenshots: number;
 }
 
 // OBS-related types for better type safety

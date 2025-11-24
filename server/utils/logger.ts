@@ -1,25 +1,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type {
-  LLMService,
-  StreamAnalysisService,
-  TTSService,
-  VideoSyncService,
-} from '../types';
 
 // Get __dirname equivalent in ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 type ServiceName =
-  | LLMService
-  | TTSService
-  | VideoSyncService
-  | StreamAnalysisService
+  | 'Inworld'
+  | 'VideoSync'
   | 'OBS'
   | 'PumpFunMessages'
-  | 'VisionProcessor';
+  | 'FileManager'
+  | 'Pipeline';
 
 // ANSI Colors
 const colors = {

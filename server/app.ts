@@ -1,13 +1,11 @@
 import 'dotenv/config';
 import fs from 'node:fs';
 import express from 'express';
-import config from './config';
-import { ConversationMemory } from './services/ConversationMemory';
+import config from './config.js';
 import {
   PipelineInitializer,
   type PipelineServices,
-} from './services/PipelineInitializer';
-import { VisionProcessor } from './services/VisionProcessor';
+} from './services/PipelineInitializer.js';
 import {
   type CompletedVideo,
   type Config,
@@ -15,8 +13,8 @@ import {
   type PipelineItem,
   PipelineStatus,
   type PipelineStatusSummary,
-} from './types/index';
-import { logger } from './utils/logger';
+} from './types/index.js';
+import { logger } from './utils/logger.js';
 
 // Initialize Express app
 const app = express();
@@ -26,8 +24,8 @@ app.use(express.json());
  * AIPipeline - Main orchestration class for the AI video generation pipeline
  *
  * This class manages the entire pipeline from receiving user input to generating
- * video responses. It coordinates between different services (text generation,
- * TTS, video sync, etc.) and manages the processing queue.
+ * video responses. It coordinates between Inworld AI (for text + TTS) and
+ * FAL (for video sync).
  */
 class AIPipeline {
   /** Configuration for the pipeline and all services */
@@ -39,23 +37,11 @@ class AIPipeline {
   /** Container for all pipeline services */
   services?: PipelineServices;
 
-  /** Service for processing vision/screenshots */
-  visionProcessor: VisionProcessor | null = null;
-
-  /** Flag indicating if vision processing is enabled */
-  useVision = false;
-
   /** Interval handler for thought generation */
   thoughtInterval: NodeJS.Timeout | null = null;
 
   /** Flag indicating if thought generation is enabled */
   useThoughts = false;
-
-  /** Track the last generated text for ElevenLabs TTS context */
-  lastGeneratedText = '';
-
-  /** Conversation memory for tracking all interactions */
-  conversationMemory: ConversationMemory;
 
   /** Expose pipeline status enum for external use */
   static Status = PipelineStatus;
@@ -63,15 +49,9 @@ class AIPipeline {
   constructor() {
     this.config = {
       ...config,
-      testMode: false,
+      testMode: process.env.TEST_MODE === 'true',
     };
     this.pipeline = new Map<string, PipelineItem>();
-    this.conversationMemory = new ConversationMemory(
-      1000,
-      100,
-      './data',
-      this.config
-    );
   }
 
   /**
@@ -80,41 +60,6 @@ class AIPipeline {
   async initialize(): Promise<boolean> {
     const initializer = new PipelineInitializer(this.config);
     this.services = await initializer.initialize();
-
-    // Set conversation memory for text and thought generators
-    if (this.services) {
-      this.services.textGenerator.setConversationMemory(
-        this.conversationMemory
-      );
-      this.services.thoughtGenerator.setConversationMemory(
-        this.conversationMemory
-      );
-    }
-
-    // Initialize vision processor if OBS is connected and vision is enabled
-    if (this.services.obsStream?.isConnected() && this.config.useVision) {
-      this.visionProcessor = new VisionProcessor(
-        this.services.obsStream,
-        this.config
-      );
-
-      // Set up vision response handler
-      this.visionProcessor.on(
-        'visionResponse',
-        this.handleVisionResponse.bind(this)
-      );
-
-      // Start vision processing
-      const success = await this.visionProcessor.start();
-      if (success) {
-        this.useVision = true;
-        logger.info(
-          `Vision processing started with ${this.config.visionIntervalSeconds || 30} second interval`
-        );
-      } else {
-        logger.error('Failed to start vision processing');
-      }
-    }
 
     // Initialize message ingestion service if enabled
     if (this.services.messageIngestion) {
@@ -147,7 +92,7 @@ class AIPipeline {
     }
 
     // Initialize thought generation if enabled
-    if (this.useThoughts && this.services.thoughtGenerator) {
+    if (this.useThoughts) {
       this.startThoughtGeneration();
     }
 
@@ -192,22 +137,11 @@ class AIPipeline {
   }
 
   /**
-   * Generate a thought and process it directly through TTS and video pipeline
+   * Generate a thought and process it directly through the pipeline
    */
   private async generateThoughtVideo(): Promise<void> {
     if (!this.services) {
       logger.warn('Services not initialized');
-      return;
-    }
-
-    if (
-      !(
-        this.services.thoughtGenerator &&
-        this.services.tts &&
-        this.services.sync
-      )
-    ) {
-      logger.warn('Required services not available for thought generation');
       return;
     }
 
@@ -218,11 +152,8 @@ class AIPipeline {
     }
 
     try {
-      // Generate a unique thought
-      const thought = await this.services.thoughtGenerator.generateThought();
-
-      // Track thought in conversation memory
-      await this.conversationMemory.addEntry('thought', thought);
+      // Generate thought using Inworld (returns text + audio)
+      const { text, audioPath } = await this.services.inworld.generateThought();
 
       // Create a pipeline item for tracking
       const messageId = `thought-${Date.now()}`;
@@ -230,37 +161,20 @@ class AIPipeline {
         messageId,
         userId: 'thought-system',
         message: 'Generated thought',
-        response: thought,
-        status: PipelineStatus.GENERATING_SPEECH,
+        response: text,
+        audioPath,
+        status: PipelineStatus.GENERATING_VIDEO,
         timestamp: Date.now(),
         updates: [
-          {
-            status: PipelineStatus.RECEIVED,
-            timestamp: Date.now(),
-          },
-          {
-            status: PipelineStatus.GENERATING_SPEECH,
-            timestamp: Date.now(),
-          },
+          { status: PipelineStatus.RECEIVED, timestamp: Date.now() },
+          { status: PipelineStatus.GENERATING_RESPONSE, timestamp: Date.now() },
+          { status: PipelineStatus.GENERATING_SPEECH, timestamp: Date.now() },
+          { status: PipelineStatus.GENERATING_VIDEO, timestamp: Date.now() },
         ],
       };
 
       this.pipeline.set(messageId, thoughtItem);
-      logger.info(
-        `Processing thought directly through TTS: ${thought.substring(0, 50)}...`
-      );
-
-      // Generate speech directly from thought
-      const audioPath = await this.services.tts.convert(
-        thought,
-        this.lastGeneratedText
-      );
-      thoughtItem.audioPath = audioPath;
-      this.updateStatus(thoughtItem, PipelineStatus.GENERATING_VIDEO);
-      logger.info(`Generated speech for thought at: ${audioPath}`);
-
-      // Update last generated text
-      this.lastGeneratedText = thought;
+      logger.info(`Processing thought: ${text.slice(0, 50)}...`);
 
       // Generate video
       const videoPath = await this.services.sync.process(audioPath);
@@ -298,13 +212,6 @@ class AIPipeline {
   handleUserInput(userId: string, message: string): InputResponse {
     const messageId = `${userId}-${Date.now()}`;
 
-    // Track user message in conversation memory asynchronously (don't block)
-    this.conversationMemory
-      .addEntry('user_message', message, userId)
-      .catch((err) =>
-        logger.error(`Failed to add user message to memory: ${err}`)
-      );
-
     // Create pipeline item
     const pipelineItem: PipelineItem = {
       messageId,
@@ -324,7 +231,7 @@ class AIPipeline {
     logger.info(`New input received: ${messageId}`);
 
     // Start processing if capacity available
-    if (this.getActiveProcessingCount() < this.config.maxConcurrent || 0) {
+    if (this.getActiveProcessingCount() < (this.config.maxConcurrent || 1)) {
       this.processItem(pipelineItem).catch((err) =>
         logger.error(
           `Failed to process item ${messageId}: ${err instanceof Error ? err.message : String(err)}`
@@ -369,47 +276,39 @@ class AIPipeline {
         throw new Error('Pipeline services not initialized');
       }
 
-      // Evaluate
+      // Evaluate message priority using Inworld
       this.updateStatus(item, PipelineStatus.EVALUATING);
       logger.info(`Evaluating message: ${item.message}`);
-      const evaluations = await this.services.evaluator.evaluateInputs([item]);
-      const evaluation = evaluations[0];
-      logger.info(
-        `Evaluation priority: ${evaluation.priority}, min required: ${this.config.minPriority}`
-      );
-      if (evaluation.priority < this.config.minPriority) {
+      const priority = await this.services.inworld.evaluateMessage(item.message);
+      logger.info(`Evaluation priority: ${priority}, min required: ${this.config.minPriority}`);
+      
+      if (priority < this.config.minPriority) {
         this.updateStatus(item, PipelineStatus.REJECTED);
         return;
       }
 
-      // Generate response using the service
+      // Generate response and audio using Inworld (single call)
       this.updateStatus(item, PipelineStatus.GENERATING_RESPONSE);
-      const response = await this.services.textGenerator.generateText(
+      const { text, audioPath } = await this.services.inworld.generate(
         item.message,
-        undefined,
         item.userId
       );
-      item.response = response;
-      logger.info(`Generated response: ${response}`);
-
-      // Track bot response in conversation memory
-      await this.conversationMemory.addEntry(
-        'bot_response',
-        response,
-        item.userId
-      );
-
-      // Generate speech
-      this.updateStatus(item, PipelineStatus.GENERATING_SPEECH);
-      const audioPath = await this.services.tts.convert(
-        response,
-        this.lastGeneratedText
-      );
+      item.response = text;
       item.audioPath = audioPath;
+      logger.info(`Generated response: ${text}`);
+
+      // Update status to show speech is done (it was generated with text)
+      this.updateStatus(item, PipelineStatus.GENERATING_SPEECH);
       logger.info(`Generated speech at: ${audioPath}`);
 
-      // Update last generated text
-      this.lastGeneratedText = response;
+      // Skip video sync in test mode
+      if (this.config.testMode) {
+        logger.info('Test mode: Skipping video sync and OBS');
+        logger.info(`Test mode: Audio file kept at: ${audioPath}`);
+        this.updateStatus(item, PipelineStatus.COMPLETED);
+        // Keep audio file for testing - don't delete
+        return;
+      }
 
       // Generate video
       this.updateStatus(item, PipelineStatus.GENERATING_VIDEO);
@@ -435,11 +334,10 @@ class AIPipeline {
 
       // Mark as completed
       this.updateStatus(item, PipelineStatus.COMPLETED);
+
       // Clean up files
-      if (!this.config.testMode) {
-        fs.unlinkSync(audioPath);
-        fs.unlinkSync(videoPath);
-      }
+      fs.unlinkSync(audioPath);
+      fs.unlinkSync(videoPath);
     } catch (error) {
       logger.error(
         `Pipeline error for ${item.messageId}: ${error instanceof Error ? error.message : String(error)}`
@@ -507,122 +405,10 @@ class AIPipeline {
   markVideoPlayed(messageId: string): boolean {
     const item = this.pipeline.get(messageId);
     if (item?.status === PipelineStatus.COMPLETED && item.videoPath) {
-      // !this.config.testMode && fs.unlinkSync(item.videoPath);
       this.pipeline.delete(messageId);
       return true;
     }
     return false;
-  }
-
-  /**
-   * Handle vision responses from the VisionProcessor - processes directly through TTS/video
-   */
-  private async handleVisionResponse(visionData: {
-    description: string;
-    response: string;
-    timestamp: string;
-  }): Promise<void> {
-    if (!(this.useVision && this.services)) {
-      return;
-    }
-
-    try {
-      logger.info(
-        `Vision response received: ${visionData.response.substring(0, 100)}...`
-      );
-
-      // Check if we have capacity for processing
-      if (this.getActiveProcessingCount() >= (this.config.maxConcurrent || 1)) {
-        logger.info('Pipeline at capacity, skipping vision response');
-        return;
-      }
-
-      // Track vision observation in conversation memory
-      await this.conversationMemory.addEntry(
-        'vision_observation',
-        visionData.response,
-        undefined,
-        { description: visionData.description }
-      );
-
-      // Create a pipeline item for tracking
-      const messageId = `vision-${Date.now()}`;
-      const visionItem: PipelineItem = {
-        messageId,
-        userId: 'vision-system',
-        message: `Vision detected: ${visionData.description}`,
-        response: visionData.response,
-        status: PipelineStatus.GENERATING_SPEECH,
-        timestamp: Date.now(),
-        updates: [
-          {
-            status: PipelineStatus.GENERATING_SPEECH,
-            timestamp: Date.now(),
-          },
-        ],
-      };
-
-      this.pipeline.set(messageId, visionItem);
-      logger.info(
-        `Processing vision response directly through TTS: ${visionData.response.substring(0, 50)}...`
-      );
-
-      // Generate speech directly from response
-      const audioPath = await this.services.tts.convert(
-        visionData.response,
-        this.lastGeneratedText
-      );
-      visionItem.audioPath = audioPath;
-      this.updateStatus(visionItem, PipelineStatus.GENERATING_VIDEO);
-      logger.info(`Generated speech for vision response at: ${audioPath}`);
-
-      // Update last generated text
-      this.lastGeneratedText = visionData.response;
-
-      // Generate video
-      const videoPath = await this.services.sync.process(audioPath);
-      visionItem.videoPath = videoPath;
-      this.updateStatus(visionItem, PipelineStatus.COMPLETED);
-      logger.info(`Generated video for vision response at: ${videoPath}`);
-
-      // Send video to OBS
-      if (this.services.obsStream) {
-        try {
-          await this.services.obsStream.updateGeneratedVideoSource(videoPath);
-          logger.info(`Sent vision response video to OBS: ${videoPath}`);
-        } catch (obsError) {
-          logger.error(
-            `Failed to send vision video to OBS: ${obsError instanceof Error ? obsError.message : String(obsError)}`
-          );
-        }
-      }
-
-      // Clean up files
-      if (!this.config.testMode) {
-        fs.unlinkSync(audioPath);
-        fs.unlinkSync(videoPath);
-      }
-    } catch (error) {
-      logger.error(
-        `Error handling vision response: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }
-
-  /**
-   * Stop vision processing
-   */
-  stopVisionProcessing(): void {
-    if (!this.visionProcessor) {
-      return;
-    }
-
-    logger.info('Stopping vision processing...');
-    this.visionProcessor.stop();
-    this.visionProcessor.removeAllListeners('visionResponse');
-    this.visionProcessor = null;
-    this.useVision = false;
-    logger.info('Vision processing stopped');
   }
 
   /**
@@ -682,6 +468,26 @@ class AIPipeline {
         })),
     };
   }
+
+  /**
+   * Shutdown the pipeline gracefully
+   */
+  async shutdown(): Promise<void> {
+    // Stop thought generation if active
+    if (this.useThoughts) {
+      this.stopThoughtGeneration();
+    }
+
+    // Disconnect from OBS if connected
+    if (this.services?.obsStream) {
+      await this.services.obsStream.disconnect();
+    }
+
+    // Stop Inworld service
+    if (this.services?.inworld) {
+      await this.services.inworld.stop();
+    }
+  }
 }
 
 // Initialize pipeline
@@ -703,6 +509,7 @@ if (process.argv.includes('--cli')) {
 
         if (input.toLowerCase() === 'exit') {
           readline.close();
+          await pipeline.shutdown();
           process.exit(0);
         }
 
@@ -748,22 +555,7 @@ if (process.argv.includes('--cli')) {
       // Handle graceful shutdown
       process.on('SIGINT', async () => {
         logger.info('Shutting down server...');
-
-        // // Stop vision processing if active
-        // if (pipeline.useVision) {
-        //   pipeline.stopVisionProcessing();
-        // }
-
-        // Stop thought generation if active
-        if (pipeline.useThoughts) {
-          pipeline.stopThoughtGeneration();
-        }
-
-        // Disconnect from OBS if connected
-        if (pipeline.services?.obsStream) {
-          await pipeline.services.obsStream.disconnect();
-        }
-
+        await pipeline.shutdown();
         server.close(() => {
           logger.info('Server stopped');
           process.exit(0);
